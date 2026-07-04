@@ -398,11 +398,78 @@
     footer a { color: #b9f6ca; text-decoration: none; }
     footer a:hover { text-decoration: underline; }
 
+    /* ── SAFE vs DESTRUCTIVE COMPARISON ── */
+    .compare-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    .compare-box {
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 26px 26px;
+      border: 1.5px solid var(--border);
+      background: var(--bg-card);
+    }
+    .compare-box.safe { border-color: var(--green); background: #f0faf0; }
+    .compare-box.danger { border-color: var(--red); background: #fdecea; }
+    .compare-box h4 {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1rem;
+      font-weight: 800;
+      margin-bottom: 6px;
+    }
+    .compare-box.safe h4 { color: var(--green-dark); }
+    .compare-box.danger h4 { color: #b3261e; }
+    .compare-box .compare-sub {
+      font-size: 0.85rem;
+      margin-bottom: 14px;
+    }
+    .compare-box.safe .compare-sub { color: #2e5d30; }
+    .compare-box.danger .compare-sub { color: #8e2420; }
+    .compare-box ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .compare-box li {
+      position: relative;
+      padding-left: 24px;
+      font-size: 0.9rem;
+      line-height: 1.6;
+      color: var(--text-muted);
+    }
+    .compare-box.safe li::before {
+      content: "✓";
+      position: absolute;
+      left: 0;
+      color: var(--green-dark);
+      font-weight: 800;
+    }
+    .compare-box.danger li::before {
+      content: "✕";
+      position: absolute;
+      left: 0;
+      color: var(--red);
+      font-weight: 800;
+    }
+    .compare-box code {
+      background: rgba(255,255,255,0.7);
+    }
+    .compare-box.danger code {
+      border-color: #f5b8b5;
+      color: #b3261e;
+    }
+
     /* ── RESPONSIVE ── */
     @media (max-width: 640px) {
       .page-header { padding: 48px 0 40px; }
       main { padding: 40px 0 56px; }
-      .card, .info-card { padding: 22px 20px; }
+      .card, .info-card, .compare-box { padding: 22px 20px; }
       .step { flex-direction: column; gap: 10px; padding: 20px; }
       .step-num { width: 28px; height: 28px; font-size: 0.8rem; }
       .nav-links a { padding: 5px 8px; font-size: 0.82rem; }
@@ -440,6 +507,7 @@
         <a href="#local">A. Run locally</a>
         <a href="#vps">B. Deploy on a Hostinger VPS</a>
         <a href="#firstrun">C. First-run setup</a>
+        <a href="#backups">D. Backups &amp; disaster recovery</a>
         <a href="#troubleshooting">Troubleshooting</a>
         <a href="#security-reminders">Security reminders</a>
       </div>
@@ -682,14 +750,95 @@ crontab -e
           <h3><span class="cnum">C8</span>Post-setup checklist</h3>
           <ul class="checklist">
             <li>Padlock / HTTPS visible in the browser (Caddy + Let's Encrypt working).</li>
-            <li>Backup cron installed (section B) — and test a restore once:
-              <pre><code>gunzip -c backups/coincache-DATE.sql.gz | docker compose exec -T db psql -U coincache -d coincache</code></pre>
-              (restore into a fresh database: run <code>docker compose down -v &amp;&amp; docker compose up -d</code> first)
-            </li>
+            <li>Backup cron installed (section B) — and test a restore once, following the verified procedure in <a href="#backups" style="color:var(--green-dark);font-weight:600">section D</a>.</li>
             <li><code>.env</code> never committed / copied anywhere public.</li>
             <li>Keep the VPS patched: <code>apt update &amp;&amp; apt upgrade</code> periodically, or enable <code>unattended-upgrades</code>.</li>
             <li>Optional hardening: SSH key login only (disable password auth in <code>sshd_config</code>).</li>
           </ul>
+        </div>
+      </section>
+
+      <!-- ═══ D. BACKUPS & DISASTER RECOVERY ═══ -->
+      <section class="big-section" id="backups">
+        <h2>💾 D. Backups &amp; disaster recovery</h2>
+        <p class="section-subtitle">Every command in this section was executed and verified today — this is the tested path back from any disaster.</p>
+
+        <div class="card">
+          <h3><span class="cnum">D1</span>The golden rules</h3>
+          <div class="compare-grid">
+            <div class="compare-box safe">
+              <h4>✅ SAFE</h4>
+              <p class="compare-sub">Data always survives these:</p>
+              <ul>
+                <li><code>git pull</code></li>
+                <li><code>docker compose up -d --build</code></li>
+                <li><code>docker compose restart</code> / <code>stop</code> / <code>start</code></li>
+                <li><code>docker compose down</code> (WITHOUT <code>-v</code>)</li>
+                <li>VPS reboots</li>
+              </ul>
+            </div>
+            <div class="compare-box danger">
+              <h4>⛔ DESTRUCTIVE</h4>
+              <p class="compare-sub">These delete the database:</p>
+              <ul>
+                <li><code>docker compose down -v</code></li>
+                <li><code>docker volume rm</code> / <code>docker volume prune</code></li>
+              </ul>
+              <p class="compare-sub" style="margin-top:14px;margin-bottom:0"><strong>Never use <code>-v</code> once you have real data.</strong></p>
+            </div>
+          </div>
+          <p>Data lives in the <code>db_data</code> Docker volume, not in containers.</p>
+        </div>
+
+        <div class="card">
+          <h3><span class="cnum">D2</span>Backups</h3>
+          <p><strong>Automatic nightly:</strong></p>
+          <pre><code>crontab -e
+<span class="comment"># add this line (keeps the last 30 in ./backups):</span>
+0 2 * * * /path/to/coincache/scripts/backup.sh</code></pre>
+          <p><strong>Manual, anytime:</strong></p>
+          <pre><code>./scripts/backup.sh</code></pre>
+          <p>
+            Dumps are created with <code>pg_dump --clean --if-exists</code>, so a single file restores
+            over an existing database OR into a brand-new empty one.
+          </p>
+          <p>
+            Copy a backup off the VPS occasionally — a backup on the same disk as the database is only
+            half a backup. From your laptop:
+          </p>
+          <pre><code>scp root@YOUR-VPS-IP:/path/to/coincache/backups/coincache-DATE.sql.gz .</code></pre>
+        </div>
+
+        <div class="card">
+          <h3><span class="cnum">D3</span>Restore a backup (app still running)</h3>
+          <p>For example after a bad import or accidental deletions:</p>
+          <pre><code>cd /path/to/coincache
+docker compose stop web
+gunzip -c backups/coincache-DATE.sql.gz | docker compose exec -T db psql -q -U coincache -d coincache
+docker compose start web</code></pre>
+          <div class="note">
+            <span class="note-icon">💡</span>
+            <div>This restores <strong>everything</strong> as of the backup moment — records, users, even passwords. Verified: zero errors, deleted records came back.</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3><span class="cnum">D4</span>Total loss (volume deleted, disk died, or moving to a new VPS)</h3>
+          <p>Get three things onto the machine: the repo, your <code>.env</code>, and a backup file. Then:</p>
+          <pre><code>docker compose up -d db          <span class="comment"># start ONLY the database, fresh and empty</span>
+<span class="comment"># wait ~10 seconds for it to become healthy</span>
+gunzip -c backups/coincache-DATE.sql.gz | docker compose exec -T db psql -q -U coincache -d coincache
+docker compose up -d             <span class="comment"># start the rest; migrations recognise the restored state automatically</span></code></pre>
+          <p>Verified end-to-end today: fresh volume, zero restore errors, all records recovered, app healthy.</p>
+        </div>
+
+        <div class="card">
+          <h3><span class="cnum">D5</span>After any restore</h3>
+          <p>
+            Open the site and spot-check your records; you may need to sign in again.
+            Test the whole procedure once now, while the stakes are low — a backup you've never
+            restored is a hope, not a plan.
+          </p>
         </div>
       </section>
 
