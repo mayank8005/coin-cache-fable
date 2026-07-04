@@ -1,0 +1,9 @@
+# DOMAIN comes from .env via docker-compose. With a real domain
+# (e.g. money.example.com) Caddy obtains and renews a Let's Encrypt
+# certificate automatically and redirects HTTP -> HTTPS.
+# With DOMAIN unset it falls back to plain HTTP on :80 — only for a
+# first smoke test on a bare IP; set a domain before real use.
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy web:3000
+}

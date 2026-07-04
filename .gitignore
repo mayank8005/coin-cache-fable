@@ -1,0 +1,9 @@
+node_modules
+.next
+.env
+*.log
+.DS_Store
+backups/
+*.csv
+.claude/settings.local.json
+*.tsbuildinfo

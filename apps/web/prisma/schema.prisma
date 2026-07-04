@@ -1,0 +1,134 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+enum EntryType {
+  EXPENSE
+  INCOME
+}
+
+// Every user has a fully independent space: their own accounts,
+// categories, records, transfers and preferences. Deleting a user
+// deletes their entire space (cascade).
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  name         String
+  passwordHash String
+  role         Role       @default(MEMBER)
+  createdAt    DateTime   @default(now())
+  sessions     Session[]
+  accounts     Account[]
+  categories   Category[]
+  records      Record[]
+  transfers    Transfer[]
+  settings     Settings?
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Account {
+  id                  String     @id @default(cuid())
+  user                User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId              String
+  name                String
+  icon                String     @default("💵")
+  color               String     @default("#4caf50")
+  initialBalanceMinor BigInt     @default(0)
+  archived            Boolean    @default(false)
+  sortOrder           Int        @default(0)
+  createdAt           DateTime   @default(now())
+  records             Record[]
+  transfersFrom       Transfer[] @relation("from")
+  transfersTo         Transfer[] @relation("to")
+
+  @@index([userId])
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  name      String
+  type      EntryType
+  icon      String    @default("📦")
+  color     String    @default("#9e9e9e")
+  archived  Boolean   @default(false)
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+  records   Record[]
+
+  @@unique([userId, name, type])
+}
+
+model Record {
+  id          String    @id @default(cuid())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  type        EntryType
+  amountMinor BigInt
+  date        DateTime  @db.Date
+  note        String    @default("")
+  account     Account   @relation(fields: [accountId], references: [id])
+  accountId   String
+  category    Category  @relation(fields: [categoryId], references: [id])
+  categoryId  String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId, date])
+  @@index([accountId, date])
+  @@index([categoryId])
+}
+
+model Transfer {
+  id            String   @id @default(cuid())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  amountMinor   BigInt
+  date          DateTime @db.Date
+  note          String   @default("")
+  fromAccount   Account  @relation("from", fields: [fromAccountId], references: [id])
+  fromAccountId String
+  toAccount     Account  @relation("to", fields: [toAccountId], references: [id])
+  toAccountId   String
+  createdAt     DateTime @default(now())
+
+  @@index([userId, date])
+}
+
+model Settings {
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId   String @id
+  currency String @default("INR")
+  locale   String @default("en-IN")
+  timezone String @default("Asia/Kolkata")
+}
+
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+}

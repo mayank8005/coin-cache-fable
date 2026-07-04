@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Run &amp; deploy — CoinCache</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green: #4caf50;
+      --green-dark: #388e3c;
+      --red: #e53935;
+      --bg: #f6f7f4;
+      --bg-card: #ffffff;
+      --text: #1a1a1a;
+      --text-muted: #555;
+      --text-light: #777;
+      --border: #e0e4db;
+      --radius: 16px;
+      --shadow: 0 2px 12px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.05);
+      --shadow-hover: 0 6px 24px rgba(0,0,0,0.11), 0 2px 6px rgba(0,0,0,0.07);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 16px;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(246,247,244,0.92);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+    }
+    .nav-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 54px;
+      gap: 16px;
+    }
+    .nav-logo {
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--green-dark);
+      text-decoration: none;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+    }
+    .nav-links {
+      display: flex;
+      gap: 6px;
+      list-style: none;
+      flex-wrap: wrap;
+    }
+    .nav-links a {
+      text-decoration: none;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      padding: 5px 12px;
+      border-radius: 8px;
+      transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+    .nav-links a:hover {
+      background: rgba(76,175,80,0.1);
+      color: var(--green-dark);
+    }
+    .nav-links a.active {
+      background: var(--green);
+      color: #fff;
+      font-weight: 600;
+    }
+    .nav-links a.active:hover {
+      background: var(--green-dark);
+      color: #fff;
+    }
+
+    /* ── HEADER ── */
+    .page-header {
+      padding: 72px 0 56px;
+      text-align: center;
+      background: linear-gradient(160deg, #f6f7f4 0%, #edf5ee 60%, #f6f7f4 100%);
+      border-bottom: 1px solid var(--border);
+    }
+    .page-header h1 {
+      font-size: clamp(1.8rem, 5vw, 2.8rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      margin-bottom: 12px;
+    }
+    .page-header h1 span { color: var(--green); }
+    .page-header p {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    /* ── LAYOUT ── */
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+    main { padding: 56px 0 80px; }
+
+    .big-section {
+      margin-bottom: 56px;
+      scroll-margin-top: 74px;
+    }
+    .big-section > h2 {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: clamp(1.35rem, 3vw, 1.7rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 6px;
+    }
+    .big-section > .section-subtitle {
+      color: var(--text-muted);
+      font-size: 1rem;
+      margin-bottom: 28px;
+    }
+
+    /* ── CARDS & STEPS ── */
+    .card {
+      background: var(--bg-card);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 28px 28px;
+      margin-bottom: 20px;
+    }
+    .card h3 {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+    .card p {
+      color: var(--text-muted);
+      font-size: 0.93rem;
+      margin-bottom: 10px;
+    }
+    .card p:last-child, .card pre:last-child, .card ul:last-child { margin-bottom: 0; }
+
+    .steps { counter-reset: step; display: flex; flex-direction: column; gap: 16px; }
+    .step {
+      display: flex;
+      gap: 18px;
+      background: var(--bg-card);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px 24px;
+      box-shadow: var(--shadow);
+    }
+    .step-num {
+      counter-increment: step;
+      flex-shrink: 0;
+      width: 32px;
+      height: 32px;
+      background: var(--green);
+      color: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 0.9rem;
+      margin-top: 1px;
+    }
+    .step-num::before { content: counter(step); }
+    .step-body { flex: 1; min-width: 0; }
+    .step-body p { color: var(--text-muted); font-size: 0.93rem; margin-bottom: 8px; }
+    .step-body p:last-child, .step-body pre:last-child { margin-bottom: 0; }
+
+    pre {
+      background: #1a2e1a;
+      color: #b9f6ca;
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-size: 0.83rem;
+      overflow-x: auto;
+      line-height: 1.65;
+      margin: 10px 0;
+    }
+    pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      color: inherit;
+      font-size: inherit;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+    pre .comment { color: #7ba97d; }
+
+    code {
+      background: #f0faf0;
+      border: 1px solid #c8e6c9;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 0.85em;
+      color: var(--green-dark);
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+
+    .ui {
+      display: inline-block;
+      background: #f1f3ee;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0 7px;
+      font-size: 0.85em;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    ul.plain {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    ul.plain li {
+      position: relative;
+      padding-left: 22px;
+      font-size: 0.93rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    ul.plain li::before {
+      content: "•";
+      position: absolute;
+      left: 6px;
+      color: var(--green);
+      font-weight: 800;
+    }
+
+    .note {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      background: #fff8e1;
+      border: 1.5px solid #ffe082;
+      border-radius: 12px;
+      padding: 14px 16px;
+      font-size: 0.88rem;
+      color: #6d4c00;
+      line-height: 1.6;
+      margin-top: 12px;
+    }
+    .note .note-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+
+    /* ── PAGE TOC ── */
+    .page-toc {
+      background: var(--bg-card);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px 24px;
+      margin-bottom: 48px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 18px;
+      font-size: 0.9rem;
+    }
+    .page-toc strong {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-light);
+    }
+    .page-toc a {
+      color: var(--green-dark);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .page-toc a:hover { text-decoration: underline; }
+
+    /* ── SECTION C SUBSECTIONS ── */
+    .cnum {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--green);
+      color: #fff;
+      border-radius: 8px;
+      padding: 2px 9px;
+      font-size: 0.8rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      flex-shrink: 0;
+    }
+
+    /* ── CHECKLIST ── */
+    .checklist {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .checklist li {
+      position: relative;
+      padding-left: 32px;
+      font-size: 0.92rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    .checklist li::before {
+      content: "✓";
+      position: absolute;
+      left: 0;
+      top: 1px;
+      width: 21px;
+      height: 21px;
+      background: #f0faf0;
+      border: 1.5px solid var(--green);
+      border-radius: 6px;
+      color: var(--green-dark);
+      font-weight: 800;
+      font-size: 0.8rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ── TROUBLESHOOTING & SECURITY BOXES ── */
+    .info-card {
+      background: var(--bg-card);
+      border: 1.5px solid var(--border);
+      border-left: 5px solid var(--green);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 26px 28px;
+      margin-bottom: 20px;
+    }
+    .info-card.red-edge { border-left-color: var(--red); }
+    .info-card h3 {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 14px;
+    }
+    .info-card ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .info-card li {
+      position: relative;
+      padding-left: 22px;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    .info-card li::before {
+      content: "→";
+      position: absolute;
+      left: 0;
+      color: var(--green-dark);
+      font-weight: 700;
+    }
+    .info-card.red-edge li::before { color: var(--red); }
+
+    /* ── FOOTER ── */
+    footer {
+      background: #1a2e1a;
+      color: #a5d6a7;
+      text-align: center;
+      padding: 40px 24px;
+      font-size: 0.875rem;
+      line-height: 1.8;
+    }
+    footer strong { color: #c8e6c9; }
+    footer a { color: #b9f6ca; text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 640px) {
+      .page-header { padding: 48px 0 40px; }
+      main { padding: 40px 0 56px; }
+      .card, .info-card { padding: 22px 20px; }
+      .step { flex-direction: column; gap: 10px; padding: 20px; }
+      .step-num { width: 28px; height: 28px; font-size: 0.8rem; }
+      .nav-links a { padding: 5px 8px; font-size: 0.82rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <div class="nav-inner">
+      <a href="README.html" class="nav-logo">🪙 CoinCache</a>
+      <ul class="nav-links">
+        <li><a href="README.html">Product</a></li>
+        <li><a href="guide.html">User guide</a></li>
+        <li><a href="deploy.html" class="active">Run &amp; deploy</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- HEADER -->
+  <header class="page-header">
+    <div class="container">
+      <h1>🚀 Run it locally, <span>deploy it for real</span></h1>
+      <p>Two paths: a quick local spin with Docker Desktop, or a proper production deployment on your Hostinger VPS with automatic HTTPS.</p>
+    </div>
+  </header>
+
+  <main>
+    <div class="container">
+
+      <!-- PAGE TOC -->
+      <div class="page-toc">
+        <strong>On this page</strong>
+        <a href="#local">A. Run locally</a>
+        <a href="#vps">B. Deploy on a Hostinger VPS</a>
+        <a href="#firstrun">C. First-run setup</a>
+        <a href="#troubleshooting">Troubleshooting</a>
+        <a href="#security-reminders">Security reminders</a>
+      </div>
+
+      <!-- ═══ A. LOCAL ═══ -->
+      <section class="big-section" id="local">
+        <h2>🖥️ A. Run locally</h2>
+        <p class="section-subtitle">For trying CoinCache out, or for development.</p>
+
+        <div class="card">
+          <h3>📋 Prerequisite</h3>
+          <p>Docker Desktop. That's the whole list.</p>
+        </div>
+
+        <div class="card">
+          <h3>⚡ Quick way (full stack in Docker)</h3>
+          <pre><code>cp .env.example .env      <span class="comment"># defaults are fine locally; DOMAIN empty = plain HTTP on port 80</span>
+docker compose up -d --build
+open http://localhost</code></pre>
+        </div>
+
+        <div class="card">
+          <h3>🔁 Dev mode (hot reload)</h3>
+          <p>Install dependencies, keep the compose database running (or any Postgres), then start the dev server:</p>
+          <pre><code>npm install
+DATABASE_URL=postgresql://coincache:&lt;DB_PASSWORD&gt;@localhost:5432/coincache npm run dev</code></pre>
+          <div class="note">
+            <span class="note-icon">⚠️</span>
+            <div>
+              The compose file intentionally does <strong>not</strong> publish the Postgres port.
+              For dev, either run your own Postgres or temporarily add
+              <code>ports: ["5432:5432"]</code> to the <code>db</code> service.
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>🧪 Unit tests</h3>
+          <pre><code>npm test</code></pre>
+        </div>
+      </section>
+
+      <!-- ═══ B. VPS ═══ -->
+      <section class="big-section" id="vps">
+        <h2>🌐 B. Deploy on a Hostinger VPS</h2>
+        <p class="section-subtitle">An 8 GB VPS is plenty — idle usage is well under 1 GB RAM.</p>
+
+        <div class="steps">
+
+          <div class="step">
+            <span class="step-num"></span>
+            <div class="step-body">
+              <p><strong>Point DNS first.</strong> Create an A record for e.g. <code>money.yourdomain.com</code> → your VPS IP. Do this before deploying so Let's Encrypt can validate the domain immediately.</p>
+            </div>
+          </div>
+
+          <div class="step">
+            <span class="step-num"></span>
+            <div class="step-body">
+              <p><strong>SSH in.</strong></p>
+              <pre><code>ssh root@your-vps-ip</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <span class="step-num"></span>
+            <div class="step-body">
+              <p><strong>Install Docker</strong> if it's missing.</p>
+              <pre><code>curl -fsSL https://get.docker.com | sh</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <span class="step-num"></span>
+            <div class="step-body">
+              <p><strong>Get the code onto the VPS.</strong></p>
+              <pre><code>git clone &lt;your repo&gt; coincache
+<span class="comment"># — or from your machine —</span>
+scp -r ./coin-cache-fable root@vps:/opt/coincache</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <span class="step-num"></span>
+            <div class="step-body">
+              <p><strong>Configure the environment.</strong></p>
+              <pre><code>cd /opt/coincache
+cp .env.example .env</code></pre>
+              <p>Then edit <code>.env</code>:</p>
+              <ul class="plain">
+                <li><code>DB_PASSWORD</code> → the output of <code>openssl rand -base64 24</code></li>
+                <li><code>DOMAIN</code> → <code>money.yourdomain.com</code></li>
+                <li><code>TZ</code> → <code>Asia/Kolkata</code></li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="step">
+            <span class="step-num"></span>
+            <div class="step-body">
+              <p><strong>Open the firewall</strong> (if <code>ufw</code> is active).</p>
+              <pre><code>ufw allow 80/tcp &amp;&amp; ufw allow 443/tcp</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <span class="step-num"></span>
+            <div class="step-body">
+              <p><strong>Build and start.</strong></p>
+              <pre><code>docker compose up -d --build</code></pre>
+              <p>The first build takes a few minutes. Migrations run automatically, and Caddy fetches the HTTPS certificate on the first request.</p>
+            </div>
+          </div>
+
+          <div class="step">
+            <span class="step-num"></span>
+            <div class="step-body">
+              <p><strong>Open https://your-domain</strong> — continue in <a href="#firstrun" style="color:var(--green-dark);font-weight:600">section C</a>.</p>
+            </div>
+          </div>
+
+          <div class="step">
+            <span class="step-num"></span>
+            <div class="step-body">
+              <p><strong>Backups.</strong> Nightly <code>pg_dump</code>, keeps the last 30 in <code>./backups</code>.</p>
+              <pre><code>chmod +x scripts/backup.sh
+crontab -e
+<span class="comment"># add this line:</span>
+0 2 * * * /opt/coincache/scripts/backup.sh</code></pre>
+              <p>Occasionally copy a dump off the VPS for extra safety.</p>
+            </div>
+          </div>
+
+          <div class="step">
+            <span class="step-num"></span>
+            <div class="step-body">
+              <p><strong>Updating.</strong> Pull or copy the new code, then rebuild — your data lives in the <code>db_data</code> Docker volume and survives rebuilds.</p>
+              <pre><code>docker compose up -d --build</code></pre>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ═══ C. FIRST-RUN SETUP ═══ -->
+      <section class="big-section" id="firstrun">
+        <h2>🏁 C. First-run setup — from empty app to daily use</h2>
+        <p class="section-subtitle">The containers are up. Here's how to go from a blank app to your family tracking every rupee.</p>
+
+        <div class="card">
+          <h3><span class="cnum">C1</span>Create the admin account</h3>
+          <p>
+            The very first visit redirects to a one-time <code>/setup</code> page. It only exists while the
+            app has zero users; afterwards it permanently redirects to the login page, so nobody else can
+            ever grab it.
+          </p>
+          <ul class="plain">
+            <li>Enter your <strong>name</strong>, <strong>email</strong> (this is your sign-in), and a <strong>password</strong> — minimum 8 characters; use a unique one from a password manager.</li>
+            <li>Submitting creates the <strong>ADMIN</strong> account, seeds your space with the default categories and a <span class="ui">Cash</span> account, and signs you in.</li>
+            <li>The admin role is only for managing logins: adding family members and resetting their passwords. Each member — including the admin — has their own completely private space.</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3><span class="cnum">C2</span>Set preferences</h3>
+          <p>
+            <span class="ui">Settings → Preferences</span>: pick your <strong>currency</strong> (any 3-letter
+            ISO code; <code>INR</code> default, shown with Indian digit grouping) and <strong>timezone</strong>
+            (<code>Asia/Kolkata</code> default) — the timezone controls what "today" and day/week/month
+            boundaries mean.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3><span class="cnum">C3</span>Create your accounts</h3>
+          <p>
+            <span class="ui">Settings → Accounts</span>: <span class="ui">Cash</span> already exists; add
+            Bank, Credit card, UPI etc., each with an emoji and an initial balance so the header balance
+            starts correct.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3><span class="cnum">C4</span>Import your old data</h3>
+          <ul class="plain">
+            <li>In your old expense app, look for a <span class="ui">Data backup</span> / <span class="ui">Export to CSV</span> option. Transfer the file to the phone or computer you're using.</li>
+            <li>In CoinCache: <span class="ui">Settings → Data</span> → choose the file → <span class="ui">Import CSV</span>.</li>
+            <li>Date order, delimiter and decimal style are auto-detected (with a manual Day/Month override); <strong>Skip duplicates</strong> makes re-imports safe; unknown categories and accounts are created automatically.</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3><span class="cnum">C5</span>Add family members</h3>
+          <p>
+            <span class="ui">Settings → Family &amp; security → Add family member</span>: name, email, and a
+            temporary password (min 8 chars). Share it with them; they sign in and change it via
+            <span class="ui">Change my password</span> — which signs out their other devices.
+            There is no public registration page.
+          </p>
+          <p>
+            The new member gets their <strong>own seeded private space</strong> (default categories +
+            a Cash account) the moment they're created — and the admin cannot see their records.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3><span class="cnum">C6</span>Install on your phones</h3>
+          <ul class="plain">
+            <li><strong>Android / Chrome:</strong> menu <span class="ui">⋮</span> → <span class="ui">Add to Home screen</span> / <span class="ui">Install app</span>.</li>
+            <li><strong>iPhone / Safari:</strong> <span class="ui">Share</span> → <span class="ui">Add to Home Screen</span>.</li>
+          </ul>
+          <p>Opens fullscreen like a native app.</p>
+        </div>
+
+        <div class="card">
+          <h3><span class="cnum">C7</span>Forgotten passwords (recovery)</h3>
+          <p>
+            <strong>A family member forgot theirs:</strong> the admin opens
+            <span class="ui">Settings → Family &amp; security</span>, taps <span class="ui">Reset password</span>
+            next to their name, and sets a new one — their other devices are signed out. Verified working.
+          </p>
+          <p>
+            <strong>The ADMIN forgot theirs:</strong> there is no email-reset by design (no outbound
+            email = nothing to leak). Instead, run the built-in emergency reset tool on the VPS —
+            it ships inside the app container, works for any user, keeps all data, and signs that
+            user out everywhere:
+          </p>
+          <pre><code>docker compose exec web node /opt/tools/reset-password.js you@example.com 'new-password'</code></pre>
+          <div class="note" style="background:#fdecea;border-color:#f5b8b5;color:#8e2420">
+            <span class="note-icon">⛔</span>
+            <div>
+              <strong>Never delete rows from the <code style="background:rgba(0,0,0,0.05);border-color:#f5b8b5;color:#8e2420">"User"</code> table.</strong>
+              Since every user owns their space, deleting a user permanently deletes all of their
+              records, accounts and categories (cascade).
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3><span class="cnum">C8</span>Post-setup checklist</h3>
+          <ul class="checklist">
+            <li>Padlock / HTTPS visible in the browser (Caddy + Let's Encrypt working).</li>
+            <li>Backup cron installed (section B) — and test a restore once:
+              <pre><code>gunzip -c backups/coincache-DATE.sql.gz | docker compose exec -T db psql -U coincache -d coincache</code></pre>
+              (restore into a fresh database: run <code>docker compose down -v &amp;&amp; docker compose up -d</code> first)
+            </li>
+            <li><code>.env</code> never committed / copied anywhere public.</li>
+            <li>Keep the VPS patched: <code>apt update &amp;&amp; apt upgrade</code> periodically, or enable <code>unattended-upgrades</code>.</li>
+            <li>Optional hardening: SSH key login only (disable password auth in <code>sshd_config</code>).</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- TROUBLESHOOTING -->
+      <div class="info-card" id="troubleshooting">
+        <h3>🔧 Troubleshooting</h3>
+        <ul>
+          <li><code>docker compose ps</code> — check the status of all three containers.</li>
+          <li><code>docker compose logs web</code> / <code>caddy</code> / <code>db</code> — read the logs of a specific service.</li>
+          <li>Seeing <em>"database not ready, retrying"</em> for a few seconds at first boot is normal — the app waits for Postgres.</li>
+          <li><strong>HTTP 502 with "Authentication failed against database server" in the web logs:</strong> <code>DB_PASSWORD</code> in <code>.env</code> was changed <em>after</em> the database volume was first created — Postgres only reads it on first init. Either reset the data (<code>docker compose down -v &amp;&amp; docker compose up -d</code> — deletes all records) or keep the data and sync the password in place:<br><code>echo "ALTER USER coincache WITH PASSWORD :'pw';" | docker compose exec -T db psql -U coincache -d coincache -v pw="$(grep '^DB_PASSWORD=' .env | cut -d= -f2-)"</code><br>then <code>docker compose restart web</code>.</li>
+          <li>Browser can't connect? Check the DNS A record and the firewall (ports 80 and 443).</li>
+          <li>HTTPS requires <code>DOMAIN</code> to be set and ports 80 + 443 reachable from the internet — Let's Encrypt validates over them.</li>
+        </ul>
+      </div>
+
+      <!-- SECURITY REMINDERS -->
+      <div class="info-card red-edge" id="security-reminders">
+        <h3>🔒 Security reminders</h3>
+        <ul>
+          <li>Never expose port 5432 (Postgres) to the internet.</li>
+          <li>Keep <code>.env</code> out of git — it's already gitignored; leave it that way.</li>
+          <li>Always use a real <code>DOMAIN</code> (HTTPS) in production: <code>Secure</code> cookies and HSTS depend on it. An empty <code>DOMAIN</code> (plain HTTP on port 80) is only for a first local smoke test.</li>
+        </ul>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- FOOTER -->
+  <footer>
+    <p style="font-size:1.5rem;margin-bottom:12px">🪙</p>
+    <p><strong>CoinCache</strong></p>
+    <p><a href="README.html">Product</a> · <a href="guide.html">User guide</a> · <a href="deploy.html">Run &amp; deploy</a></p>
+    <p>Built with Next.js, PostgreSQL and Docker</p>
+    <p style="margin-top:4px">Your data, your server · 2026</p>
+  </footer>
+
+</body>
+</html>

@@ -1,0 +1,251 @@
+import "server-only";
+import { prisma } from "./db";
+import { rangeFor, todayInTz, type Period } from "./periods";
+
+export type PlainAccount = {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  archived: boolean;
+  balanceMinor: number;
+  initialBalanceMinor: number;
+};
+
+export type PlainCategory = {
+  id: string;
+  name: string;
+  type: "EXPENSE" | "INCOME";
+  icon: string;
+  color: string;
+  archived: boolean;
+};
+
+export type Entry =
+  | {
+      kind: "record";
+      id: string;
+      type: "EXPENSE" | "INCOME";
+      amountMinor: number;
+      date: string;
+      note: string;
+      accountId: string;
+      accountName: string;
+      categoryId: string;
+      categoryName: string;
+      categoryIcon: string;
+      categoryColor: string;
+    }
+  | {
+      kind: "transfer";
+      id: string;
+      amountMinor: number;
+      date: string;
+      note: string;
+      fromAccountId: string;
+      fromAccountName: string;
+      toAccountId: string;
+      toAccountName: string;
+    };
+
+export type CategorySlice = {
+  categoryId: string;
+  name: string;
+  icon: string;
+  color: string;
+  amountMinor: number;
+  share: number;
+};
+
+export type Dashboard = {
+  incomeMinor: number;
+  expenseMinor: number;
+  totalBalanceMinor: number;
+  byCategory: CategorySlice[];
+  entries: Entry[];
+  rangeLabel: string;
+};
+
+export async function getSettings(userId: string) {
+  return (
+    (await prisma.settings.findUnique({ where: { userId } })) ?? {
+      userId,
+      currency: "INR",
+      locale: "en-IN",
+      timezone: process.env.TZ || "Asia/Kolkata",
+    }
+  );
+}
+
+export async function userCount(): Promise<number> {
+  return prisma.user.count();
+}
+
+export async function getAccountsWithBalances(userId: string): Promise<PlainAccount[]> {
+  const [accounts, recordSums, transferFrom, transferTo] = await Promise.all([
+    prisma.account.findMany({
+      where: { userId },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    }),
+    prisma.record.groupBy({
+      by: ["accountId", "type"],
+      where: { userId },
+      _sum: { amountMinor: true },
+    }),
+    prisma.transfer.groupBy({
+      by: ["fromAccountId"],
+      where: { userId },
+      _sum: { amountMinor: true },
+    }),
+    prisma.transfer.groupBy({
+      by: ["toAccountId"],
+      where: { userId },
+      _sum: { amountMinor: true },
+    }),
+  ]);
+  return accounts.map((a) => {
+    let balance = Number(a.initialBalanceMinor);
+    for (const s of recordSums) {
+      if (s.accountId !== a.id) continue;
+      const sum = Number(s._sum.amountMinor ?? 0);
+      balance += s.type === "INCOME" ? sum : -sum;
+    }
+    for (const t of transferFrom)
+      if (t.fromAccountId === a.id) balance -= Number(t._sum.amountMinor ?? 0);
+    for (const t of transferTo)
+      if (t.toAccountId === a.id) balance += Number(t._sum.amountMinor ?? 0);
+    return {
+      id: a.id,
+      name: a.name,
+      icon: a.icon,
+      color: a.color,
+      archived: a.archived,
+      balanceMinor: balance,
+      initialBalanceMinor: Number(a.initialBalanceMinor),
+    };
+  });
+}
+
+export async function getCategories(userId: string): Promise<PlainCategory[]> {
+  const cats = await prisma.category.findMany({
+    where: { userId },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+  });
+  return cats.map((c) => ({
+    id: c.id,
+    name: c.name,
+    type: c.type,
+    icon: c.icon,
+    color: c.color,
+    archived: c.archived,
+  }));
+}
+
+export async function getDashboard(opts: {
+  userId: string;
+  period: Period;
+  offset: number;
+  accountId: string | null;
+}): Promise<Dashboard> {
+  const settings = await getSettings(opts.userId);
+  const { start, end, label } = rangeFor(
+    opts.period,
+    opts.offset,
+    todayInTz(settings.timezone),
+  );
+
+  const dateFilter =
+    start && end
+      ? { gte: new Date(start + "T00:00:00Z"), lt: new Date(end + "T00:00:00Z") }
+      : undefined;
+
+  const recordWhere = {
+    userId: opts.userId,
+    ...(dateFilter ? { date: dateFilter } : {}),
+    ...(opts.accountId ? { accountId: opts.accountId } : {}),
+  };
+  const transferWhere = {
+    userId: opts.userId,
+    ...(dateFilter ? { date: dateFilter } : {}),
+    ...(opts.accountId
+      ? { OR: [{ fromAccountId: opts.accountId }, { toAccountId: opts.accountId }] }
+      : {}),
+  };
+
+  const [records, transfers, accounts] = await Promise.all([
+    prisma.record.findMany({
+      where: recordWhere,
+      include: { category: true, account: true },
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+    }),
+    prisma.transfer.findMany({
+      where: transferWhere,
+      include: { fromAccount: true, toAccount: true },
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+    }),
+    getAccountsWithBalances(opts.userId),
+  ]);
+
+  let incomeMinor = 0;
+  let expenseMinor = 0;
+  const catMap = new Map<string, CategorySlice>();
+  for (const r of records) {
+    const amt = Number(r.amountMinor);
+    if (r.type === "INCOME") {
+      incomeMinor += amt;
+    } else {
+      expenseMinor += amt;
+      const slice = catMap.get(r.categoryId) ?? {
+        categoryId: r.categoryId,
+        name: r.category.name,
+        icon: r.category.icon,
+        color: r.category.color,
+        amountMinor: 0,
+        share: 0,
+      };
+      slice.amountMinor += amt;
+      catMap.set(r.categoryId, slice);
+    }
+  }
+  const byCategory = [...catMap.values()].sort((a, b) => b.amountMinor - a.amountMinor);
+  for (const s of byCategory) s.share = expenseMinor > 0 ? s.amountMinor / expenseMinor : 0;
+
+  const entries: Entry[] = [
+    ...records.map(
+      (r): Entry => ({
+        kind: "record",
+        id: r.id,
+        type: r.type,
+        amountMinor: Number(r.amountMinor),
+        date: r.date.toISOString().slice(0, 10),
+        note: r.note,
+        accountId: r.accountId,
+        accountName: r.account.name,
+        categoryId: r.categoryId,
+        categoryName: r.category.name,
+        categoryIcon: r.category.icon,
+        categoryColor: r.category.color,
+      }),
+    ),
+    ...transfers.map(
+      (t): Entry => ({
+        kind: "transfer",
+        id: t.id,
+        amountMinor: Number(t.amountMinor),
+        date: t.date.toISOString().slice(0, 10),
+        note: t.note,
+        fromAccountId: t.fromAccountId,
+        fromAccountName: t.fromAccount.name,
+        toAccountId: t.toAccountId,
+        toAccountName: t.toAccount.name,
+      }),
+    ),
+  ].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+  const visible = opts.accountId
+    ? accounts.filter((a) => a.id === opts.accountId)
+    : accounts.filter((a) => !a.archived);
+  const totalBalanceMinor = visible.reduce((s, a) => s + a.balanceMinor, 0);
+
+  return { incomeMinor, expenseMinor, totalBalanceMinor, byCategory, entries, rangeLabel: label };
+}

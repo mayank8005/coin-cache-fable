@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CoinCache — Self-hosted family expense tracker</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green: #4caf50;
+      --green-dark: #388e3c;
+      --red: #e53935;
+      --bg: #f6f7f4;
+      --bg-card: #ffffff;
+      --text: #1a1a1a;
+      --text-muted: #555;
+      --text-light: #777;
+      --border: #e0e4db;
+      --radius: 16px;
+      --shadow: 0 2px 12px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.05);
+      --shadow-hover: 0 6px 24px rgba(0,0,0,0.11), 0 2px 6px rgba(0,0,0,0.07);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 16px;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(246,247,244,0.92);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+    }
+    .nav-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 54px;
+      gap: 16px;
+    }
+    .nav-logo {
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--green-dark);
+      text-decoration: none;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+    }
+    .nav-links {
+      display: flex;
+      gap: 6px;
+      list-style: none;
+      flex-wrap: wrap;
+    }
+    .nav-links a {
+      text-decoration: none;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      padding: 5px 12px;
+      border-radius: 8px;
+      transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+    .nav-links a:hover {
+      background: rgba(76,175,80,0.1);
+      color: var(--green-dark);
+    }
+    .nav-links a.active {
+      background: var(--green);
+      color: #fff;
+      font-weight: 600;
+    }
+    .nav-links a.active:hover {
+      background: var(--green-dark);
+      color: #fff;
+    }
+
+    /* ── LAYOUT UTILS ── */
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+    section { padding: 80px 0; }
+    section + section { padding-top: 0; }
+
+    h2 {
+      font-size: clamp(1.5rem, 3vw, 2rem);
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+    }
+    .section-subtitle {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      margin-bottom: 48px;
+    }
+
+    /* ── HERO ── */
+    .hero {
+      padding: 96px 0 80px;
+      text-align: center;
+      background: linear-gradient(160deg, #f6f7f4 0%, #edf5ee 60%, #f6f7f4 100%);
+      border-bottom: 1px solid var(--border);
+    }
+    .hero-logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--bg-card);
+      border: 1.5px solid var(--border);
+      border-radius: 20px;
+      padding: 10px 20px;
+      margin-bottom: 36px;
+      box-shadow: var(--shadow);
+    }
+    .hero-logo-emoji { font-size: 1.8rem; line-height: 1; }
+    .hero-logo-text {
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: var(--green-dark);
+      letter-spacing: -0.02em;
+    }
+    .hero h1 {
+      font-size: clamp(2.2rem, 6vw, 3.6rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: var(--text);
+      line-height: 1.1;
+      margin-bottom: 16px;
+    }
+    .hero h1 span { color: var(--green); }
+    .hero-tagline {
+      font-size: clamp(1rem, 2.5vw, 1.25rem);
+      color: var(--text-muted);
+      max-width: 620px;
+      margin: 0 auto 40px;
+      line-height: 1.6;
+    }
+    .hero-badges {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-card);
+      border: 1.5px solid var(--border);
+      border-radius: 100px;
+      padding: 7px 16px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      box-shadow: var(--shadow);
+    }
+    .badge-green { border-color: var(--green); color: var(--green-dark); background: #f0faf0; }
+
+    /* ── FEATURE GROUP CARDS ── */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 20px;
+    }
+    .feature-card {
+      background: var(--bg-card);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 26px;
+      box-shadow: var(--shadow);
+      transition: box-shadow 0.2s, transform 0.2s;
+    }
+    .feature-card:hover {
+      box-shadow: var(--shadow-hover);
+      transform: translateY(-2px);
+    }
+    .feature-card-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .feature-icon { font-size: 1.8rem; line-height: 1; }
+    .feature-card h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .feature-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+    .feature-list li {
+      position: relative;
+      padding-left: 24px;
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      line-height: 1.55;
+    }
+    .feature-list li::before {
+      content: "✓";
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: var(--green);
+      font-weight: 800;
+    }
+    .feature-list code {
+      background: #f0faf0;
+      border: 1px solid #c8e6c9;
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 0.8rem;
+      color: var(--green-dark);
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+
+    /* ── NOT INCLUDED NOTE ── */
+    .honest-box {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      background: #fff8e1;
+      border: 1.5px solid #ffe082;
+      border-radius: var(--radius);
+      padding: 22px 24px;
+      margin-top: 28px;
+      font-size: 0.9rem;
+      color: #6d4c00;
+      line-height: 1.65;
+    }
+    .honest-box-icon { font-size: 1.4rem; flex-shrink: 0; margin-top: 1px; }
+    .honest-box strong { display: block; margin-bottom: 4px; }
+
+    /* ── TEASER CARDS ── */
+    .teaser-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+    .teaser-card {
+      display: block;
+      text-decoration: none;
+      background: var(--bg-card);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px 30px;
+      box-shadow: var(--shadow);
+      transition: box-shadow 0.2s, transform 0.2s, border-color 0.2s;
+    }
+    .teaser-card:hover {
+      box-shadow: var(--shadow-hover);
+      transform: translateY(-3px);
+      border-color: var(--green);
+    }
+    .teaser-card .teaser-icon { font-size: 2.2rem; display: block; margin-bottom: 14px; }
+    .teaser-card h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .teaser-card p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 16px;
+    }
+    .teaser-cta {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--green-dark);
+    }
+
+    /* ── SECURITY ── */
+    #security {
+      background: linear-gradient(160deg, #1a2e1a 0%, #1e3a1e 100%);
+      color: #e8f5e9;
+    }
+    #security h2 { color: #fff; }
+    #security .section-subtitle { color: #a5d6a7; }
+
+    .security-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .security-card {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: var(--radius);
+      padding: 22px 20px;
+      transition: background 0.2s;
+    }
+    .security-card:hover { background: rgba(255,255,255,0.09); }
+    .security-card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .security-card-header span:first-child { font-size: 1.4rem; }
+    .security-card-header strong {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #c8e6c9;
+      letter-spacing: 0.01em;
+    }
+    .security-card p {
+      font-size: 0.875rem;
+      color: #a5d6a7;
+      line-height: 1.6;
+    }
+    .security-card p code {
+      background: rgba(255,255,255,0.08);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 0.8rem;
+      color: #b9f6ca;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+
+    /* ── TECH TABLE ── */
+    .table-wrap {
+      overflow-x: auto;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      border: 1.5px solid var(--border);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--bg-card);
+      font-size: 0.9rem;
+    }
+    thead { background: var(--green-dark); color: #fff; }
+    thead th {
+      padding: 14px 20px;
+      text-align: left;
+      font-weight: 700;
+      font-size: 0.85rem;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.15s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #f0faf0; }
+    tbody td { padding: 14px 20px; vertical-align: top; color: var(--text-muted); line-height: 1.5; }
+    tbody td:first-child { font-weight: 600; color: var(--text); white-space: nowrap; }
+    tbody td:nth-child(2) { font-weight: 500; color: var(--green-dark); white-space: nowrap; }
+    tbody td code {
+      background: #f0faf0;
+      border: 1px solid #c8e6c9;
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 0.82rem;
+      color: var(--green-dark);
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+
+    /* ── VERIFICATION ── */
+    #verification { background: #f0faf0; }
+    .verify-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 12px;
+    }
+    .verify-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      background: var(--bg-card);
+      border: 1.5px solid #c8e6c9;
+      border-radius: 12px;
+      padding: 14px 16px;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .verify-item-icon { color: var(--green); font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+
+    /* ── FOOTER ── */
+    footer {
+      background: #1a2e1a;
+      color: #a5d6a7;
+      text-align: center;
+      padding: 40px 24px;
+      font-size: 0.875rem;
+      line-height: 1.8;
+    }
+    footer strong { color: #c8e6c9; }
+    footer a { color: #b9f6ca; text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 640px) {
+      section { padding: 56px 0; }
+      .hero { padding: 64px 0 56px; }
+      .nav-links a { padding: 5px 8px; font-size: 0.82rem; }
+      tbody td:nth-child(2) { white-space: normal; }
+      tbody td:first-child { white-space: normal; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <div class="nav-inner">
+      <a href="README.html" class="nav-logo">🪙 CoinCache</a>
+      <ul class="nav-links">
+        <li><a href="README.html" class="active">Product</a></li>
+        <li><a href="guide.html">User guide</a></li>
+        <li><a href="deploy.html">Run &amp; deploy</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero" id="hero">
+    <div class="container">
+      <div class="hero-logo">
+        <span class="hero-logo-emoji">🪙</span>
+        <span class="hero-logo-text">CoinCache</span>
+      </div>
+      <h1>The expense tracker you love —<br /><span>on your own server.</span></h1>
+      <p class="hero-tagline">
+        A private, self-hosted expense tracker for your family. Built as a PWA, deployed with one
+        <code style="background:#f0faf0;border:1px solid #c8e6c9;border-radius:6px;padding:2px 8px;font-size:0.9em;color:#388e3c;font-family:monospace">docker compose</code>
+        command, and designed so your financial data never leaves your VPS.
+      </p>
+      <div class="hero-badges">
+        <span class="badge badge-green">🐳 One-command deploy</span>
+        <span class="badge badge-green">🔒 Zero third parties</span>
+        <span class="badge badge-green">📱 Installable PWA</span>
+        <span class="badge">Next.js 15 + PostgreSQL</span>
+        <span class="badge">CSV import &amp; export</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features">
+    <div class="container">
+      <h2>💰 Everything you need — self-hosted</h2>
+      <p class="section-subtitle">The complete, verified feature list, grouped by what you'll use it for.</p>
+      <div class="feature-grid">
+
+        <div class="feature-card">
+          <div class="feature-card-header">
+            <span class="feature-icon">➕</span>
+            <h3>Tracking</h3>
+          </div>
+          <ul class="feature-list">
+            <li>Expense &amp; income records via big <strong style="color:var(--red)">−</strong> / <strong style="color:var(--green)">+</strong> buttons</li>
+            <li>Calculator keypad with <code>+ − × ÷</code> arithmetic while typing amounts</li>
+            <li>Category icon grid — two taps to record</li>
+            <li>Note field on every record</li>
+            <li>Date picker (defaults to today)</li>
+            <li>Account picker per record</li>
+            <li>Edit any record by tapping it</li>
+            <li>Delete records</li>
+            <li>Records list grouped by day</li>
+          </ul>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-card-header">
+            <span class="feature-icon">📊</span>
+            <h3>Insights</h3>
+          </div>
+          <ul class="feature-list">
+            <li>Donut chart of expenses by category</li>
+            <li>Income / expenses / net summary for the period</li>
+            <li>Per-category breakdown with percentage bars</li>
+            <li>Day / Week / Month / Year / All periods with prev/next arrows (weeks start Monday)</li>
+            <li>Total balance across accounts shown in the header</li>
+            <li>Record search within a period — matches category, note, and account</li>
+          </ul>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-card-header">
+            <span class="feature-icon">🏦</span>
+            <h3>Accounts</h3>
+          </div>
+          <ul class="feature-list">
+            <li>Multiple accounts, each with an emoji icon and initial balance</li>
+            <li>Transfers between accounts — excluded from income/expense stats, included in balances</li>
+            <li>Per-account filter on the dashboard</li>
+            <li>Archive and restore accounts</li>
+          </ul>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-card-header">
+            <span class="feature-icon">🗂️</span>
+            <h3>Categories</h3>
+          </div>
+          <ul class="feature-list">
+            <li>A sensible default category set seeded on setup: Food, Eating out, Bills, Transport, Car, Taxi, House, Entertainment, Health, Sports, Clothes, Gifts, Communications, Pets, Toiletry, Other + Salary, Savings, Deposits</li>
+            <li>Add and edit custom categories with emoji + color</li>
+            <li>Archive and restore categories</li>
+          </ul>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-card-header">
+            <span class="feature-icon">📥</span>
+            <h3>Data</h3>
+          </div>
+          <ul class="feature-list">
+            <li>CSV import for your old tracker's export (columns: date, account, category, amount, currency, converted amount, currency, description): auto-detects delimiter, decimal style, and day/month order, with manual override</li>
+            <li>Duplicate-skip on re-import</li>
+            <li>Unknown categories and accounts created automatically during import</li>
+            <li>CSV export in the same column layout — never locked in</li>
+            <li>Nightly backup script (<code>pg_dump</code> via cron, keeps last 30)</li>
+          </ul>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-card-header">
+            <span class="feature-icon">👨‍👩‍👧</span>
+            <h3>Family</h3>
+          </div>
+          <ul class="feature-list">
+            <li>A completely private, independent space per member — own accounts, categories, records, and transfers</li>
+            <li>Nobody, not even the admin, can see another member's data</li>
+            <li>Admin manages logins only: adds members and can reset member passwords — no public signup page exists</li>
+            <li>Each new member's space is automatically seeded with the default categories and a Cash account</li>
+            <li>Each person signs in with their own email + password</li>
+            <li>Change password — revokes all other sessions</li>
+          </ul>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-card-header">
+            <span class="feature-icon">📱</span>
+            <h3>App</h3>
+          </div>
+          <ul class="feature-list">
+            <li>Installable PWA on Android and iOS with standalone window and app icons</li>
+            <li>Offline fallback page</li>
+            <li>Mobile-first UI verified at iPhone width — zero horizontal scroll</li>
+            <li>iOS safe-area aware</li>
+            <li>Per-user currency preference: any ISO code, default INR with en-IN digit grouping</li>
+            <li>Per-user timezone preference</li>
+          </ul>
+        </div>
+
+      </div>
+
+      <div class="honest-box">
+        <span class="honest-box-icon">🤝</span>
+        <div>
+          <strong>Not included (by design)</strong>
+          Budgets, recurring/scheduled records, and per-record multi-currency conversion are not implemented.
+          Offline mode is read-only — adding records needs a connection (data is intentionally never cached offline).
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- GUIDES TEASER -->
+  <section id="learn-more">
+    <div class="container">
+      <h2>📚 Learn more</h2>
+      <p class="section-subtitle">The how-tos live on their own pages.</p>
+      <div class="teaser-grid">
+
+        <a class="teaser-card" href="guide.html">
+          <span class="teaser-icon">📖</span>
+          <h3>User guide</h3>
+          <p>
+            Step-by-step how-tos: first-time setup, recording and editing expenses, transfers,
+            importing your old CSV data, adding family members, installing on your phone, and more.
+          </p>
+          <span class="teaser-cta">Read the guide →</span>
+        </a>
+
+        <a class="teaser-card" href="deploy.html">
+          <span class="teaser-icon">🚀</span>
+          <h3>Run &amp; deploy</h3>
+          <p>
+            Try it locally with Docker in two commands, or take it to production on a Hostinger VPS
+            with automatic HTTPS, nightly backups, and one-command updates.
+          </p>
+          <span class="teaser-cta">See the deployment guide →</span>
+        </a>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- SECURITY -->
+  <section id="security">
+    <div class="container">
+      <h2>🔒 How your data stays yours</h2>
+      <p class="section-subtitle">Every layer — from the database to the browser cookie — is locked down by design.</p>
+      <div class="security-grid">
+
+        <div class="security-card">
+          <div class="security-card-header">
+            <span>🔑</span>
+            <strong>Passwords</strong>
+          </div>
+          <p>
+            Hashed with bcrypt at cost 12. Login is timing-safe — a full hash comparison
+            runs even for unknown email addresses, so response time reveals nothing.
+          </p>
+        </div>
+
+        <div class="security-card">
+          <div class="security-card-header">
+            <span>🍪</span>
+            <strong>Sessions</strong>
+          </div>
+          <p>
+            Random 256-bit tokens stored only as SHA-256 hashes in the database.
+            The browser cookie is <code>httpOnly</code> + <code>SameSite=Lax</code> + <code>Secure</code>
+            (when on HTTPS). 60-day sliding expiry. Changing your password revokes
+            all other sessions immediately.
+          </p>
+        </div>
+
+        <div class="security-card">
+          <div class="security-card-header">
+            <span>🚦</span>
+            <strong>Brute-force protection</strong>
+          </div>
+          <p>
+            Login rate limiting: max 10 attempts per email and 20 per IP per 15 minutes,
+            tracked in the database so a container restart does not reset the counter.
+            Verified: the 11th attempt is blocked.
+          </p>
+        </div>
+
+        <div class="security-card">
+          <div class="security-card-header">
+            <span>🚪</span>
+            <strong>No public signup</strong>
+          </div>
+          <p>
+            Only the admin can add users. The initial setup wizard locks itself permanently
+            after the first account is created, so the door cannot be reopened.
+          </p>
+        </div>
+
+        <div class="security-card">
+          <div class="security-card-header">
+            <span>🌐</span>
+            <strong>Transport &amp; HTTPS</strong>
+          </div>
+          <p>
+            Caddy reverse proxy handles automatic Let's Encrypt certificate issuance and
+            renewal. HSTS is enabled so browsers always use HTTPS after the first visit.
+          </p>
+        </div>
+
+        <div class="security-card">
+          <div class="security-card-header">
+            <span>🛡️</span>
+            <strong>Security headers</strong>
+          </div>
+          <p>
+            Strict Content-Security-Policy, <code>X-Frame-Options: DENY</code>,
+            <code>X-Content-Type-Options: nosniff</code>, <code>Referrer-Policy</code>,
+            and <code>Permissions-Policy</code> applied on every response.
+          </p>
+        </div>
+
+        <div class="security-card">
+          <div class="security-card-header">
+            <span>✅</span>
+            <strong>Input &amp; query safety</strong>
+          </div>
+          <p>
+            Every mutation validated with Zod on the server. All database queries go through
+            Prisma's parameterized interface — no raw SQL interpolation, no injection surface.
+            CSRF is covered by Next.js server-action origin checks combined with SameSite cookies.
+          </p>
+        </div>
+
+        <div class="security-card">
+          <div class="security-card-header">
+            <span>🔌</span>
+            <strong>Network isolation</strong>
+          </div>
+          <p>
+            PostgreSQL and the app container publish no ports to the host. Only Caddy
+            (ports 80 and 443) is reachable from the internet. The database password lives
+            in <code>.env</code> on your server and never leaves it.
+          </p>
+        </div>
+
+        <div class="security-card">
+          <div class="security-card-header">
+            <span>📦</span>
+            <strong>Container hardening</strong>
+          </div>
+          <p>
+            The app runs as a non-root user inside a minimal Alpine image, reducing the
+            blast radius of any hypothetical vulnerability to near zero.
+          </p>
+        </div>
+
+        <div class="security-card">
+          <div class="security-card-header">
+            <span>🙈</span>
+            <strong>Zero third parties</strong>
+          </div>
+          <p>
+            No analytics, no trackers, no external fonts or CDNs — the app makes no
+            outbound requests at all. Nothing can leak; there is no one to leak to.
+          </p>
+        </div>
+
+        <div class="security-card">
+          <div class="security-card-header">
+            <span>🧱</span>
+            <strong>Data isolation</strong>
+          </div>
+          <p>
+            Every query is scoped to the signed-in user server-side; ownership of every record,
+            account and category is verified on each mutation. Verified with two concurrent users.
+          </p>
+        </div>
+
+        <div class="security-card">
+          <div class="security-card-header">
+            <span>💾</span>
+            <strong>Automatic backups</strong>
+          </div>
+          <p>
+            <code>scripts/backup.sh</code> runs a <code>pg_dump</code> nightly via cron and
+            keeps the last 30 dumps, so a one-line crontab entry is all you need to never
+            lose data.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ARCHITECTURE -->
+  <section id="architecture">
+    <div class="container">
+      <h2>⚙️ Architecture &amp; technical decisions</h2>
+      <p class="section-subtitle">Boring choices, on purpose. Every decision optimises for long-term maintainability over novelty.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Decision</th>
+              <th>Choice</th>
+              <th>Why</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Framework</td>
+              <td>Next.js 15 (App Router) + React 19</td>
+              <td>One codebase serves both frontend and backend via server actions — fewer moving parts, fewer services to operate.</td>
+            </tr>
+            <tr>
+              <td>Monorepo</td>
+              <td>npm workspaces</td>
+              <td><code>apps/web</code> (the app) + <code>packages/shared</code> (CSV parser + defaults, unit-tested). Clean separation without the overhead of a full monorepo tool.</td>
+            </tr>
+            <tr>
+              <td>Database</td>
+              <td>PostgreSQL 16 + Prisma 6 ORM</td>
+              <td>Proven, reliable, and self-hostable. Schema migrations apply automatically on container boot — zero manual steps on upgrade.</td>
+            </tr>
+            <tr>
+              <td>Money storage</td>
+              <td>BigInt minor units (paise)</td>
+              <td>No floating-point errors, ever. Supports very large amounts without precision loss.</td>
+            </tr>
+            <tr>
+              <td>Ledger model</td>
+              <td>Independent per-user spaces</td>
+              <td>Each family member gets a fully private ledger — like giving each person their own app behind one login page; even the admin cannot see others' data.</td>
+            </tr>
+            <tr>
+              <td>Styling &amp; charts</td>
+              <td>Tailwind CSS 4 + hand-drawn SVG donut</td>
+              <td>No chart library dependency. The donut is a small amount of SVG math — fast, fully controlled, zero bloat.</td>
+            </tr>
+            <tr>
+              <td>Auth</td>
+              <td>Email + password, DB-backed sessions</td>
+              <td>Intentionally boring. No OAuth dependency, works fully offline from the internet giants, impossible to break via a third-party auth outage.</td>
+            </tr>
+            <tr>
+              <td>Deployment</td>
+              <td>Multi-stage Dockerfile + docker compose</td>
+              <td>Node 22 Alpine base, Next.js standalone output. Runs db + web + caddy in one compose file. Resource footprint is tiny — well under 1 GB RAM on an 8 GB VPS.</td>
+            </tr>
+            <tr>
+              <td>Timezone</td>
+              <td>Configurable (default <code>Asia/Kolkata</code>)</td>
+              <td>Day/week/month boundaries match your life, not wherever the server happens to sit. Change it once in Settings.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- VERIFICATION -->
+  <section id="verification">
+    <div class="container">
+      <h2>✅ Tested end-to-end before delivery</h2>
+      <p class="section-subtitle">
+        The exact stack was built and exercised with Docker. Every item below was confirmed to work, not just assumed.
+      </p>
+      <div class="verify-grid">
+        <div class="verify-item"><span class="verify-item-icon">✔</span>Container boot + auto-migration with a fresh database</div>
+        <div class="verify-item"><span class="verify-item-icon">✔</span>Login and logout flow; session cookie set and cleared correctly</div>
+        <div class="verify-item"><span class="verify-item-icon">✔</span>Forged session cookies rejected with 401</div>
+        <div class="verify-item"><span class="verify-item-icon">✔</span>Rate limiting: 11th login attempt blocked as expected</div>
+        <div class="verify-item"><span class="verify-item-icon">✔</span>Keypad arithmetic: 12 + 3 = 15 stored as ₹15.00</div>
+        <div class="verify-item"><span class="verify-item-icon">✔</span>A real-world CSV export imported with correct amounts and dates</div>
+        <div class="verify-item"><span class="verify-item-icon">✔</span>Duplicate-skip on re-import of the same CSV</div>
+        <div class="verify-item"><span class="verify-item-icon">✔</span>Account transfers recorded and reflected in both balances</div>
+        <div class="verify-item"><span class="verify-item-icon">✔</span>CSV export produced in the documented column layout</div>
+        <div class="verify-item"><span class="verify-item-icon">✔</span>PWA assets present; installable on Android</div>
+        <div class="verify-item"><span class="verify-item-icon">✔</span>Security headers verified in browser DevTools</div>
+        <div class="verify-item"><span class="verify-item-icon">✔</span>Parser unit test suite: 5 tests, all passing</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <p style="font-size:1.5rem;margin-bottom:12px">🪙</p>
+    <p><strong>CoinCache</strong></p>
+    <p><a href="README.html">Product</a> · <a href="guide.html">User guide</a> · <a href="deploy.html">Run &amp; deploy</a></p>
+    <p>Built with Next.js, PostgreSQL and Docker</p>
+    <p style="margin-top:4px">Your data, your server · 2026</p>
+  </footer>
+
+</body>
+</html>

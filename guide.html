@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>User guide — CoinCache</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green: #4caf50;
+      --green-dark: #388e3c;
+      --red: #e53935;
+      --bg: #f6f7f4;
+      --bg-card: #ffffff;
+      --text: #1a1a1a;
+      --text-muted: #555;
+      --text-light: #777;
+      --border: #e0e4db;
+      --radius: 16px;
+      --shadow: 0 2px 12px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.05);
+      --shadow-hover: 0 6px 24px rgba(0,0,0,0.11), 0 2px 6px rgba(0,0,0,0.07);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 16px;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(246,247,244,0.92);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+    }
+    .nav-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 54px;
+      gap: 16px;
+    }
+    .nav-logo {
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--green-dark);
+      text-decoration: none;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+    }
+    .nav-links {
+      display: flex;
+      gap: 6px;
+      list-style: none;
+      flex-wrap: wrap;
+    }
+    .nav-links a {
+      text-decoration: none;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      padding: 5px 12px;
+      border-radius: 8px;
+      transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+    .nav-links a:hover {
+      background: rgba(76,175,80,0.1);
+      color: var(--green-dark);
+    }
+    .nav-links a.active {
+      background: var(--green);
+      color: #fff;
+      font-weight: 600;
+    }
+    .nav-links a.active:hover {
+      background: var(--green-dark);
+      color: #fff;
+    }
+
+    /* ── HEADER ── */
+    .page-header {
+      padding: 72px 0 56px;
+      text-align: center;
+      background: linear-gradient(160deg, #f6f7f4 0%, #edf5ee 60%, #f6f7f4 100%);
+      border-bottom: 1px solid var(--border);
+    }
+    .page-header h1 {
+      font-size: clamp(1.8rem, 5vw, 2.8rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      margin-bottom: 12px;
+    }
+    .page-header h1 span { color: var(--green); }
+    .page-header p {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      max-width: 560px;
+      margin: 0 auto;
+    }
+
+    /* ── LAYOUT ── */
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+    main { padding: 56px 0 80px; }
+
+    /* ── TOC ── */
+    .toc {
+      background: var(--bg-card);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 26px 28px;
+      margin-bottom: 48px;
+    }
+    .toc strong {
+      display: block;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-light);
+      margin-bottom: 12px;
+    }
+    .toc ol {
+      columns: 2;
+      column-gap: 32px;
+      padding-left: 20px;
+      font-size: 0.9rem;
+    }
+    .toc li { margin-bottom: 6px; break-inside: avoid; }
+    .toc a { color: var(--green-dark); text-decoration: none; font-weight: 500; }
+    .toc a:hover { text-decoration: underline; }
+
+    /* ── GUIDE SECTIONS ── */
+    .guide-section {
+      background: var(--bg-card);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 32px 30px;
+      margin-bottom: 24px;
+      scroll-margin-top: 74px;
+    }
+    .guide-section h2 {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin-bottom: 16px;
+    }
+    .guide-section h2 .emoji { font-size: 1.5rem; }
+    .guide-section p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      margin-bottom: 12px;
+    }
+    .guide-section p:last-child, .guide-section ol:last-child, .guide-section ul:last-child { margin-bottom: 0; }
+
+    .guide-steps {
+      counter-reset: gstep;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .guide-steps li {
+      position: relative;
+      padding-left: 42px;
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    .guide-steps li::before {
+      counter-increment: gstep;
+      content: counter(gstep);
+      position: absolute;
+      left: 0;
+      top: 1px;
+      width: 26px;
+      height: 26px;
+      background: var(--green);
+      color: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 0.8rem;
+    }
+
+    .guide-section ul.plain {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .guide-section ul.plain li {
+      position: relative;
+      padding-left: 22px;
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    .guide-section ul.plain li::before {
+      content: "•";
+      position: absolute;
+      left: 6px;
+      color: var(--green);
+      font-weight: 800;
+    }
+
+    code {
+      background: #f0faf0;
+      border: 1px solid #c8e6c9;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 0.85em;
+      color: var(--green-dark);
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+
+    kbd, .ui {
+      display: inline-block;
+      background: #f1f3ee;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0 7px;
+      font-size: 0.85em;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .btn-minus, .btn-plus {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      color: #fff;
+      font-weight: 800;
+      font-size: 0.95rem;
+      vertical-align: middle;
+      line-height: 1;
+    }
+    .btn-minus { background: var(--red); }
+    .btn-plus { background: var(--green); }
+
+    .tip {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      background: #f0faf0;
+      border: 1.5px solid #c8e6c9;
+      border-radius: 12px;
+      padding: 14px 16px;
+      font-size: 0.88rem;
+      color: #2e5d30;
+      line-height: 1.6;
+      margin-top: 14px;
+    }
+    .tip .tip-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+
+    .warn {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      background: #fff8e1;
+      border: 1.5px solid #ffe082;
+      border-radius: 12px;
+      padding: 14px 16px;
+      font-size: 0.88rem;
+      color: #6d4c00;
+      line-height: 1.6;
+      margin-top: 14px;
+    }
+    .warn .tip-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+
+    /* ── FOOTER ── */
+    footer {
+      background: #1a2e1a;
+      color: #a5d6a7;
+      text-align: center;
+      padding: 40px 24px;
+      font-size: 0.875rem;
+      line-height: 1.8;
+    }
+    footer strong { color: #c8e6c9; }
+    footer a { color: #b9f6ca; text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 640px) {
+      .page-header { padding: 48px 0 40px; }
+      main { padding: 40px 0 56px; }
+      .toc ol { columns: 1; }
+      .guide-section { padding: 24px 20px; }
+      .nav-links a { padding: 5px 8px; font-size: 0.82rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <div class="nav-inner">
+      <a href="README.html" class="nav-logo">🪙 CoinCache</a>
+      <ul class="nav-links">
+        <li><a href="README.html">Product</a></li>
+        <li><a href="guide.html" class="active">User guide</a></li>
+        <li><a href="deploy.html">Run &amp; deploy</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- HEADER -->
+  <header class="page-header">
+    <div class="container">
+      <h1>📖 The CoinCache <span>user guide</span></h1>
+      <p>Everything you and your family need to know, from first login to importing years of history from your old tracker.</p>
+    </div>
+  </header>
+
+  <main>
+    <div class="container">
+
+      <!-- TOC -->
+      <div class="toc">
+        <strong>On this page</strong>
+        <ol>
+          <li><a href="#setup">First-time setup</a></li>
+          <li><a href="#recording">Recording an expense or income</a></li>
+          <li><a href="#editing">Editing &amp; deleting</a></li>
+          <li><a href="#periods">Periods &amp; navigation</a></li>
+          <li><a href="#search">Searching</a></li>
+          <li><a href="#accounts">Accounts &amp; transfers</a></li>
+          <li><a href="#categories">Categories</a></li>
+          <li><a href="#import">Importing your old data</a></li>
+          <li><a href="#export">Exporting</a></li>
+          <li><a href="#family">Family members</a></li>
+          <li><a href="#install">Install as an app</a></li>
+          <li><a href="#preferences">Preferences</a></li>
+        </ol>
+      </div>
+
+      <!-- 1 SETUP -->
+      <section class="guide-section" id="setup">
+        <h2><span class="emoji">🚀</span>1. First-time setup</h2>
+        <p>The very first visit to your CoinCache URL shows a one-time <span class="ui">Setup</span> page.</p>
+        <ol class="guide-steps">
+          <li>Enter your name, email, and a password (at least 8 characters). This becomes the admin account.</li>
+          <li>Submit — CoinCache seeds the default categories and a <span class="ui">Cash</span> account, and signs you in straight away.</li>
+        </ol>
+        <div class="tip">
+          <span class="tip-icon">💡</span>
+          <div>The Setup page locks itself after this first account is created — nobody else can ever use it, even if they find your URL.</div>
+        </div>
+      </section>
+
+      <!-- 2 RECORDING -->
+      <section class="guide-section" id="recording">
+        <h2><span class="emoji">➕</span>2. Recording an expense or income</h2>
+        <ol class="guide-steps">
+          <li>Tap the red <span class="btn-minus">−</span> button for an expense, or the green <span class="btn-plus">+</span> button for income.</li>
+          <li>Type the amount on the keypad. You can calculate as you go — for example <code>120+80×2</code> — and press <kbd>=</kbd> (or the bottom button) to evaluate.</li>
+          <li>Optionally set the account, date, or a note.</li>
+          <li>Tap <span class="ui">Choose category</span>, then tap a category in the icon grid.</li>
+        </ol>
+        <p>That's it — the record saves the moment you tap the category. Two taps for a plain expense.</p>
+      </section>
+
+      <!-- 3 EDITING -->
+      <section class="guide-section" id="editing">
+        <h2><span class="emoji">✏️</span>3. Editing &amp; deleting</h2>
+        <ol class="guide-steps">
+          <li>Tap any record in the list — the same dialog opens, pre-filled with its values.</li>
+          <li>Change anything you like (amount, account, date, note), then re-pick a category to save.</li>
+          <li>Or tap 🗑️ to delete the record instead.</li>
+        </ol>
+      </section>
+
+      <!-- 4 PERIODS -->
+      <section class="guide-section" id="periods">
+        <h2><span class="emoji">📅</span>4. Periods &amp; navigation</h2>
+        <ul class="plain">
+          <li>Use the tabs <span class="ui">Day</span> <span class="ui">Week</span> <span class="ui">Month</span> <span class="ui">Year</span> <span class="ui">All</span> to pick a period.</li>
+          <li>The <span class="ui">‹</span> and <span class="ui">›</span> arrows move to the previous or next period.</li>
+          <li>Weeks start on Monday.</li>
+          <li>"Today" follows the timezone set in <span class="ui">Settings → Preferences</span>, so day boundaries match your life, not the server clock.</li>
+        </ul>
+      </section>
+
+      <!-- 5 SEARCH -->
+      <section class="guide-section" id="search">
+        <h2><span class="emoji">🔍</span>5. Searching</h2>
+        <p>
+          The search box above the <span class="ui">Records</span> list filters the current period.
+          It matches against the category name, the note, and the account name — type
+          <code>taxi</code>, <code>birthday</code>, or <code>Bank</code> and only matching records remain.
+        </p>
+      </section>
+
+      <!-- 6 ACCOUNTS -->
+      <section class="guide-section" id="accounts">
+        <h2><span class="emoji">🏦</span>6. Accounts &amp; transfers</h2>
+        <ol class="guide-steps">
+          <li>Go to <span class="ui">Settings → Accounts</span> to add an account (name, icon, initial balance), edit an existing one, or archive one you no longer use.</li>
+          <li>To move money between accounts, tap the <span class="ui">⇄</span> button next to the account picker and enter the amount.</li>
+        </ol>
+        <div class="tip">
+          <span class="tip-icon">💡</span>
+          <div>Transfers change account balances but never count as income or expense, so your donut chart and stats stay honest.</div>
+        </div>
+      </section>
+
+      <!-- 7 CATEGORIES -->
+      <section class="guide-section" id="categories">
+        <h2><span class="emoji">🗂️</span>7. Categories</h2>
+        <ul class="plain">
+          <li>Manage them in <span class="ui">Settings → Categories</span>.</li>
+          <li>Add your own with any emoji and a color.</li>
+          <li>Archiving a category hides it from the keypad grid without touching your history — old records keep it.</li>
+        </ul>
+      </section>
+
+      <!-- 8 IMPORT -->
+      <section class="guide-section" id="import">
+        <h2><span class="emoji">📥</span>8. Importing your old data</h2>
+        <ol class="guide-steps">
+          <li>In your old expense app, look for a <span class="ui">Data backup</span> / <span class="ui">Export to CSV</span> option.</li>
+          <li>In CoinCache: <span class="ui">Settings → Data</span> → choose the file → <span class="ui">Import CSV</span>.</li>
+        </ol>
+        <p>
+          The importer auto-detects the delimiter, decimal style, and date order. Unknown categories
+          and accounts are created automatically, so nothing is lost. Imports go into your own space only.
+        </p>
+        <div class="warn">
+          <span class="tip-icon">⚠️</span>
+          <div>
+            If the file is ambiguous about date order, the importer assumes Day/Month/Year and shows a
+            warning — if dates look wrong afterwards, re-import with the manual override.
+            <strong>Skip duplicates</strong> makes re-imports safe: rows already in CoinCache are skipped, not doubled.
+          </div>
+        </div>
+      </section>
+
+      <!-- 9 EXPORT -->
+      <section class="guide-section" id="export">
+        <h2><span class="emoji">📤</span>9. Exporting</h2>
+        <p>
+          <span class="ui">Settings → Data → Export all records (CSV)</span> downloads everything in a
+          standard column layout (date, account, category, amount, currency, converted amount, currency,
+          description) — so your data is portable to any other tool, forever.
+        </p>
+      </section>
+
+      <!-- 10 FAMILY -->
+      <section class="guide-section" id="family">
+        <h2><span class="emoji">👨‍👩‍👧</span>10. Family members</h2>
+        <p><em>Admin only.</em></p>
+        <ol class="guide-steps">
+          <li>Go to <span class="ui">Settings → Family &amp; security</span> → <span class="ui">Add family member</span>, and set a temporary password.</li>
+          <li>They sign in with their email and the temporary password.</li>
+          <li>They change it themselves in <span class="ui">Settings → Change my password</span> — this also signs out their other devices.</li>
+        </ol>
+        <p>
+          Each member gets their <strong>own private space</strong>, seeded with the default categories
+          and a Cash account the moment they're created. Their accounts, categories, records, and
+          preferences are entirely their own — the admin cannot see their data.
+        </p>
+        <p>The admin can still reset any member's password from <span class="ui">Settings → Family &amp; security</span> → <span class="ui">Reset password</span> — this signs out that member's other devices.</p>
+        <div class="tip">
+          <span class="tip-icon">💡</span>
+          <div>Think of it as giving each person their own private app behind one login page — the admin only manages logins, never anyone else's records.</div>
+        </div>
+      </section>
+
+      <!-- 11 INSTALL -->
+      <section class="guide-section" id="install">
+        <h2><span class="emoji">📱</span>11. Install as an app</h2>
+        <ul class="plain">
+          <li><strong>Android / Chrome:</strong> menu <span class="ui">⋮</span> → <span class="ui">Add to Home screen</span> / <span class="ui">Install app</span>.</li>
+          <li><strong>iPhone / Safari:</strong> <span class="ui">Share</span> → <span class="ui">Add to Home Screen</span>.</li>
+        </ul>
+        <p>CoinCache then opens fullscreen from its own icon, just like a native app.</p>
+      </section>
+
+      <!-- 12 PREFERENCES -->
+      <section class="guide-section" id="preferences">
+        <h2><span class="emoji">⚙️</span>12. Preferences</h2>
+        <ul class="plain">
+          <li><strong>Currency:</strong> any 3-letter ISO code. Default is <code>INR</code>.</li>
+          <li><strong>Timezone:</strong> default is <code>Asia/Kolkata</code>; it controls where your day, week, and month boundaries fall.</li>
+        </ul>
+        <p>Both are per-user — your wife can use a different currency and timezone than you.</p>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- FOOTER -->
+  <footer>
+    <p style="font-size:1.5rem;margin-bottom:12px">🪙</p>
+    <p><strong>CoinCache</strong></p>
+    <p><a href="README.html">Product</a> · <a href="guide.html">User guide</a> · <a href="deploy.html">Run &amp; deploy</a></p>
+    <p>Built with Next.js, PostgreSQL and Docker</p>
+    <p style="margin-top:4px">Your data, your server · 2026</p>
+  </footer>
+
+</body>
+</html>
