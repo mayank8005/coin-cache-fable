@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "AiProvider" ADD VALUE 'OLLAMA_CLOUD';

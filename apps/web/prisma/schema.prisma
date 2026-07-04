@@ -128,6 +128,7 @@ model Settings {
 
 enum AiProvider {
   OLLAMA
+  OLLAMA_CLOUD
   OPENAI
 }
 

@@ -5,11 +5,11 @@ import { z } from "zod";
 import { prisma } from "./db";
 import { requireUser } from "./auth";
 import { encryptSecret } from "./crypto";
-import { chatJson, chatText, getAiConfig, listModels } from "./ai";
+import { chatJson, chatText, getAiConfig, listModels, providerNeedsKey } from "./ai";
 import { getAccountsWithBalances, getCategories, getDashboard, getSettings } from "./data";
 import { todayInTz } from "./periods";
 
-const providerSchema = z.enum(["OLLAMA", "OPENAI"]);
+const providerSchema = z.enum(["OLLAMA", "OLLAMA_CLOUD", "OPENAI"]);
 const baseUrlSchema = z
   .string()
   .trim()
@@ -38,8 +38,8 @@ export async function loadAiModelsAction(formData: FormData): Promise<AiModelsRe
   if (!apiKey) {
     apiKey = (await getAiConfig(user.id))?.apiKey ?? null;
   }
-  if (parsed.data.provider === "OPENAI" && !apiKey) {
-    return { ok: false, error: "OpenAI needs an API key." };
+  if (providerNeedsKey(parsed.data.provider) && !apiKey) {
+    return { ok: false, error: "This provider needs an API key." };
   }
   try {
     const models = await listModels(parsed.data.baseUrl, apiKey);
@@ -71,8 +71,8 @@ export async function saveAiSettingsAction(formData: FormData): Promise<AiSaveRe
   const newKey = parsed.data.apiKey.trim();
   const existing = await prisma.aiSettings.findUnique({ where: { userId: user.id } });
   const apiKeyEnc = newKey ? encryptSecret(newKey) : existing?.apiKeyEnc ?? null;
-  if (parsed.data.provider === "OPENAI" && !apiKeyEnc) {
-    return { ok: false, error: "OpenAI needs an API key." };
+  if (providerNeedsKey(parsed.data.provider) && !apiKeyEnc) {
+    return { ok: false, error: "This provider needs an API key." };
   }
 
   await prisma.aiSettings.upsert({

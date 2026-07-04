@@ -8,7 +8,7 @@ import { decryptSecret } from "./crypto";
  * only differences are the base URL and whether a key is required.
  */
 export type AiConfig = {
-  provider: "OLLAMA" | "OPENAI";
+  provider: "OLLAMA" | "OLLAMA_CLOUD" | "OPENAI";
   baseUrl: string;
   apiKey: string | null;
   model: string | null;
@@ -16,8 +16,14 @@ export type AiConfig = {
 
 export const DEFAULT_BASE_URLS: Record<AiConfig["provider"], string> = {
   OLLAMA: "http://host.docker.internal:11434/v1",
+  OLLAMA_CLOUD: "https://ollama.com/v1",
   OPENAI: "https://api.openai.com/v1",
 };
+
+/** Local Ollama is the only provider that works without an API key. */
+export function providerNeedsKey(provider: AiConfig["provider"]): boolean {
+  return provider !== "OLLAMA";
+}
 
 export async function getAiConfig(userId: string): Promise<AiConfig | null> {
   const row = await prisma.aiSettings.findUnique({ where: { userId } });

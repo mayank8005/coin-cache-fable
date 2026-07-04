@@ -8,9 +8,18 @@ import {
   saveAiSettingsAction,
 } from "@/lib/ai-actions";
 
-const DEFAULTS: Record<"OLLAMA" | "OPENAI", string> = {
+type Provider = "OLLAMA" | "OLLAMA_CLOUD" | "OPENAI";
+
+const DEFAULTS: Record<Provider, string> = {
   OLLAMA: "http://host.docker.internal:11434/v1",
+  OLLAMA_CLOUD: "https://ollama.com/v1",
   OPENAI: "https://api.openai.com/v1",
+};
+
+const PROVIDER_LABELS: Record<Provider, string> = {
+  OLLAMA: "🦙 Local",
+  OLLAMA_CLOUD: "☁️ Ollama Cloud",
+  OPENAI: "🤖 OpenAI",
 };
 
 const inputCls =
@@ -18,14 +27,14 @@ const inputCls =
 
 export default function AiSettingsView(props: {
   current: {
-    provider: "OLLAMA" | "OPENAI";
+    provider: Provider;
     baseUrl: string;
     hasKey: boolean;
     model: string | null;
   } | null;
 }) {
   const router = useRouter();
-  const [provider, setProvider] = useState<"OLLAMA" | "OPENAI">(props.current?.provider ?? "OLLAMA");
+  const [provider, setProvider] = useState<Provider>(props.current?.provider ?? "OLLAMA");
   const [baseUrl, setBaseUrl] = useState(props.current?.baseUrl ?? DEFAULTS.OLLAMA);
   const [apiKey, setApiKey] = useState("");
   const [models, setModels] = useState<string[]>(props.current?.model ? [props.current.model] : []);
@@ -33,9 +42,9 @@ export default function AiSettingsView(props: {
   const [status, setStatus] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
 
-  function switchProvider(p: "OLLAMA" | "OPENAI") {
+  function switchProvider(p: Provider) {
     setProvider(p);
-    if (baseUrl === DEFAULTS.OLLAMA || baseUrl === DEFAULTS.OPENAI) setBaseUrl(DEFAULTS[p]);
+    if ((Object.values(DEFAULTS) as string[]).includes(baseUrl)) setBaseUrl(DEFAULTS[p]);
     setModels([]);
     setModel("");
     setStatus(null);
@@ -98,10 +107,10 @@ export default function AiSettingsView(props: {
       <div className="rounded-xl bg-white p-4 shadow-sm">
         <h2 className="mb-1 text-sm font-semibold">Bring your own AI</h2>
         <p className="text-xs leading-relaxed text-gray-500">
-          Connect a local Ollama server (private, free) or your OpenAI account. Everything is
-          optional and per-user: your key is encrypted on the server and never sent to the browser,
-          and AI is only called when you use an AI feature — your records are never sent anywhere
-          in the background.
+          Connect a local Ollama server (private, free), Ollama Cloud (just an API key, no
+          install), or your OpenAI account. Everything is optional and per-user: your key is
+          encrypted on the server and never sent to the browser, and AI is only called when you
+          use an AI feature — your records are never sent anywhere in the background.
         </p>
       </div>
 
@@ -110,15 +119,15 @@ export default function AiSettingsView(props: {
           Provider
         </span>
         <div className="mb-3 flex rounded-lg bg-gray-100 p-1">
-          {(["OLLAMA", "OPENAI"] as const).map((p) => (
+          {(["OLLAMA", "OLLAMA_CLOUD", "OPENAI"] as const).map((p) => (
             <button
               key={p}
               onClick={() => switchProvider(p)}
-              className={`flex-1 rounded-md py-1.5 text-sm font-medium ${
+              className={`flex-1 rounded-md px-1 py-1.5 text-xs font-medium sm:text-sm ${
                 provider === p ? "bg-white shadow" : "text-gray-500"
               }`}
             >
-              {p === "OLLAMA" ? "🦙 Ollama" : "🤖 OpenAI"}
+              {PROVIDER_LABELS[p]}
             </button>
           ))}
         </div>
@@ -131,11 +140,16 @@ export default function AiSettingsView(props: {
               Ollama running on the same server: keep the default. Elsewhere: http://its-ip:11434/v1
             </span>
           )}
+          {provider === "OLLAMA_CLOUD" && (
+            <span className="mt-1 block text-[11px] text-gray-400">
+              Create an API key at ollama.com → Settings → API keys. No local install needed.
+            </span>
+          )}
         </label>
 
         <label className="mb-3 block">
           <span className="mb-1 block text-xs font-medium text-gray-500">
-            API key {provider === "OLLAMA" && "(not needed for Ollama)"}
+            API key {provider === "OLLAMA" && "(not needed for local Ollama)"}
           </span>
           <input
             type="password"
