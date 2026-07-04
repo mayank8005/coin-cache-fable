@@ -8,6 +8,7 @@ import {
   userCount,
 } from "@/lib/data";
 import { todayInTz, type Period, PERIODS } from "@/lib/periods";
+import { aiReady, getAiConfig } from "@/lib/ai";
 import Dashboard from "@/components/Dashboard";
 
 export const dynamic = "force-dynamic";
@@ -26,10 +27,11 @@ export default async function HomePage({
   const accountId = typeof sp.account === "string" && sp.account !== "" ? sp.account : null;
 
   const settings = await getSettings(user.id);
-  const [dashboard, accounts, categories] = await Promise.all([
+  const [dashboard, accounts, categories, aiConfig] = await Promise.all([
     getDashboard({ userId: user.id, period, offset, accountId }),
     getAccountsWithBalances(user.id),
     getCategories(user.id),
+    getAiConfig(user.id),
   ]);
 
   return (
@@ -45,6 +47,7 @@ export default async function HomePage({
       accounts={accounts}
       categories={categories}
       data={dashboard}
+      aiEnabled={aiReady(aiConfig)}
     />
   );
 }

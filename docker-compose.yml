@@ -22,6 +22,11 @@ services:
     environment:
       DATABASE_URL: postgresql://coincache:${DB_PASSWORD}@db:5432/coincache
       TZ: ${TZ:-Asia/Kolkata}
+      APP_SECRET: ${APP_SECRET:-}
+    extra_hosts:
+      # Lets the container reach services on the host (e.g. an Ollama
+      # server) via host.docker.internal on Linux VPSes too.
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy

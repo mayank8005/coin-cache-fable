@@ -21,18 +21,19 @@ enum EntryType {
 // categories, records, transfers and preferences. Deleting a user
 // deletes their entire space (cascade).
 model User {
-  id           String     @id @default(cuid())
-  email        String     @unique
+  id           String      @id @default(cuid())
+  email        String      @unique
   name         String
   passwordHash String
-  role         Role       @default(MEMBER)
-  createdAt    DateTime   @default(now())
+  role         Role        @default(MEMBER)
+  createdAt    DateTime    @default(now())
   sessions     Session[]
   accounts     Account[]
   categories   Category[]
   records      Record[]
   transfers    Transfer[]
   settings     Settings?
+  aiSettings   AiSettings?
 }
 
 model Session {
@@ -123,6 +124,23 @@ model Settings {
   currency String @default("INR")
   locale   String @default("en-IN")
   timezone String @default("Asia/Kolkata")
+}
+
+enum AiProvider {
+  OLLAMA
+  OPENAI
+}
+
+// Per-user AI configuration. The API key is encrypted at rest
+// (AES-256-GCM) and never leaves the server.
+model AiSettings {
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String     @id
+  provider  AiProvider @default(OLLAMA)
+  baseUrl   String     @default("http://host.docker.internal:11434/v1")
+  apiKeyEnc String?
+  model     String?
+  updatedAt DateTime   @updatedAt
 }
 
 model LoginAttempt {

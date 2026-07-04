@@ -338,6 +338,26 @@ function PreferencesForm(props: { currency: string; timezone: string }) {
 
 // ---------------------------------------------------------------- main view
 
+function AiLink() {
+  return (
+    <section className="px-4 pt-5">
+      <a
+        href="/settings/ai"
+        className="flex items-center gap-3 rounded-xl bg-white p-4 shadow-sm active:bg-gray-50"
+      >
+        <span className="text-xl">✨</span>
+        <span className="flex-1">
+          <span className="block text-sm font-semibold">AI features</span>
+          <span className="block text-xs text-gray-400">
+            Connect Ollama or OpenAI for natural-language quick add and more
+          </span>
+        </span>
+        <span className="text-xl text-gray-300">›</span>
+      </a>
+    </section>
+  );
+}
+
 export default function SettingsView(props: {
   accounts: PlainAccount[];
   categories: PlainCategory[];
@@ -386,6 +406,8 @@ export default function SettingsView(props: {
       <Section title="Preferences">
         <PreferencesForm currency={props.currency} timezone={props.timezone} />
       </Section>
+
+      <AiLink />
     </div>
   );
 }

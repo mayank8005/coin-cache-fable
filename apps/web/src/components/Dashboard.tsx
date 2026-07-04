@@ -11,6 +11,7 @@ import Donut from "./Donut";
 import EntryList from "./EntryList";
 import RecordDialog from "./RecordDialog";
 import TransferDialog from "./TransferDialog";
+import QuickAddDialog from "./QuickAddDialog";
 
 export default function Dashboard(props: {
   userName: string;
@@ -24,6 +25,7 @@ export default function Dashboard(props: {
   accounts: PlainAccount[];
   categories: PlainCategory[];
   data: DashboardData;
+  aiEnabled: boolean;
 }) {
   const router = useRouter();
   const { data, currency, locale } = props;
@@ -38,6 +40,7 @@ export default function Dashboard(props: {
     { mode: "new" } | { mode: "edit"; entry: Extract<Entry, { kind: "transfer" }> } | null
   >(null);
   const [query, setQuery] = useState("");
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
 
   const filteredEntries = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -113,6 +116,15 @@ export default function Dashboard(props: {
           >
             ⇄
           </button>
+          {props.aiEnabled && (
+            <button
+              onClick={() => setQuickAddOpen(true)}
+              className="rounded-lg bg-brand-dark px-3 py-2 text-sm font-medium hover:bg-brand-darker"
+              title="AI quick add"
+            >
+              ✨
+            </button>
+          )}
           <div className="text-right">
             <div className="text-[11px] uppercase tracking-wide text-white/75">Balance</div>
             <div className="text-sm font-bold">{fmt(data.totalBalanceMinor)}</div>
@@ -284,6 +296,15 @@ export default function Dashboard(props: {
           accounts={activeAccounts}
           todayIso={props.todayIso}
           onClose={() => setTransferDialog(null)}
+        />
+      )}
+      {quickAddOpen && (
+        <QuickAddDialog
+          accounts={props.accounts}
+          categories={props.categories}
+          currency={currency}
+          locale={locale}
+          onClose={() => setQuickAddOpen(false)}
         />
       )}
     </div>
