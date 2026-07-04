@@ -530,7 +530,7 @@ scp -r ./coin-cache-fable root@vps:/opt/coincache</code></pre>
 cp .env.example .env</code></pre>
               <p>Then edit <code>.env</code>:</p>
               <ul class="plain">
-                <li><code>DB_PASSWORD</code> → the output of <code>openssl rand -base64 24</code></li>
+                <li><code>DB_PASSWORD</code> → the output of <code>openssl rand -hex 24</code> (hex only — characters like <code>/ + = @</code> break the database URL)</li>
                 <li><code>DOMAIN</code> → <code>money.yourdomain.com</code></li>
                 <li><code>TZ</code> → <code>Asia/Kolkata</code></li>
               </ul>
