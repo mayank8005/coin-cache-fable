@@ -7,6 +7,7 @@ const DATE_FMT = new Intl.DateTimeFormat("en", {
   weekday: "short",
   day: "numeric",
   month: "short",
+  year: "numeric",
   timeZone: "UTC",
 });
 
