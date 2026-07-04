@@ -9,6 +9,7 @@ import {
   addUserAction,
   adminResetPasswordAction,
   changePasswordAction,
+  logoutAction,
   saveAccountAction,
   saveCategoryAction,
   setAccountArchivedAction,
@@ -385,6 +386,14 @@ export default function SettingsView(props: {
 
       <Section title="Preferences">
         <PreferencesForm currency={props.currency} timezone={props.timezone} />
+      </Section>
+
+      <Section title="Session">
+        <form action={logoutAction}>
+          <button className="flex h-11 w-full items-center justify-center rounded-lg border border-expense/40 text-sm font-semibold text-expense active:bg-red-50">
+            Sign out
+          </button>
+        </form>
       </Section>
     </div>
   );

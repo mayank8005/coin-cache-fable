@@ -141,29 +141,38 @@ export default function RecordDialog(props: {
             type === "EXPENSE" ? "bg-expense" : "bg-income"
           }`}
         >
-          <button onClick={props.onClose} className="text-2xl leading-none" aria-label="Close">
+          <button
+            onClick={props.onClose}
+            className="-ml-2 flex h-11 w-11 items-center justify-center rounded-full text-3xl leading-none active:bg-black/15"
+            aria-label="Close"
+          >
             ×
           </button>
           <div className="flex gap-1 rounded-lg bg-black/15 p-0.5 text-sm font-medium">
             <button
               onClick={() => setType("EXPENSE")}
-              className={`rounded-md px-3 py-1 ${type === "EXPENSE" ? "bg-white text-expense" : ""}`}
+              className={`rounded-md px-3 py-1.5 ${type === "EXPENSE" ? "bg-white text-expense" : ""}`}
             >
               Expense
             </button>
             <button
               onClick={() => setType("INCOME")}
-              className={`rounded-md px-3 py-1 ${type === "INCOME" ? "bg-white text-income" : ""}`}
+              className={`rounded-md px-3 py-1.5 ${type === "INCOME" ? "bg-white text-income" : ""}`}
             >
               Income
             </button>
           </div>
           {editEntry ? (
-            <button onClick={remove} className="text-lg" aria-label="Delete record" disabled={pending}>
+            <button
+              onClick={remove}
+              className="-mr-2 flex h-11 w-11 items-center justify-center rounded-full text-xl active:bg-black/15"
+              aria-label="Delete record"
+              disabled={pending}
+            >
               🗑️
             </button>
           ) : (
-            <span className="w-6" />
+            <span className="w-9" />
           )}
         </div>
 
@@ -239,7 +248,10 @@ export default function RecordDialog(props: {
         ) : (
           <div className="p-4">
             <div className="mb-3 flex items-center justify-between">
-              <button onClick={() => setStep("amount")} className="text-sm font-medium text-gray-500">
+              <button
+                onClick={() => setStep("amount")}
+                className="-ml-3 flex h-11 items-center rounded-full px-3 text-sm font-medium text-gray-500 active:bg-gray-200"
+              >
                 ‹ Back
               </button>
               <span className="text-lg font-bold">

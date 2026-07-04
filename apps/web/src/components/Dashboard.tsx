@@ -1,12 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Dashboard as DashboardData, Entry, PlainAccount, PlainCategory } from "@/lib/data";
 import { PERIODS, type Period } from "@/lib/periods";
 import { formatMoney } from "@/lib/money";
-import { logoutAction } from "@/lib/actions";
 import Donut from "./Donut";
 import EntryList from "./EntryList";
 import RecordDialog from "./RecordDialog";
@@ -37,19 +36,22 @@ export default function Dashboard(props: {
   const [transferDialog, setTransferDialog] = useState<
     { mode: "new" } | { mode: "edit"; entry: Extract<Entry, { kind: "transfer" }> } | null
   >(null);
-  const [query, setQuery] = useState("");
-
-  const filteredEntries = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return data.entries;
-    return data.entries.filter((e) => {
-      const hay =
-        e.kind === "record"
-          ? `${e.categoryName} ${e.note} ${e.accountName}`
-          : `transfer ${e.note} ${e.fromAccountName} ${e.toAccountName}`;
-      return hay.toLowerCase().includes(q);
+  const [catsOpen, setCatsOpen] = useState(true);
+  const [recordsBy, setRecordsBy] = useState<"date" | "category">("date");
+  useEffect(() => {
+    if (localStorage.getItem("cc.catsOpen") === "0") setCatsOpen(false);
+    if (localStorage.getItem("cc.recordsBy") === "category") setRecordsBy("category");
+  }, []);
+  function toggleCats() {
+    setCatsOpen((open) => {
+      localStorage.setItem("cc.catsOpen", open ? "0" : "1");
+      return !open;
     });
-  }, [data.entries, query]);
+  }
+  function switchRecordsBy(by: "date" | "category") {
+    localStorage.setItem("cc.recordsBy", by);
+    setRecordsBy(by);
+  }
 
   const activeAccounts = useMemo(() => props.accounts.filter((a) => !a.archived), [props.accounts]);
 
@@ -74,29 +76,28 @@ export default function Dashboard(props: {
         <div className="flex items-center gap-2 px-4 py-3">
           <span className="text-xl">🪙</span>
           <h1 className="text-lg font-bold tracking-wide">CoinCache</h1>
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ml-auto flex items-center gap-2">
+            <Link
+              href="/search"
+              className="flex h-11 items-center gap-1.5 rounded-full bg-white/15 px-3.5 text-sm font-medium active:bg-white/30"
+            >
+              <span className="text-base leading-none" aria-hidden="true">🔍</span>
+              Search
+            </Link>
             <Link
               href="/settings"
-              className="rounded-full p-2 text-xl leading-none hover:bg-white/15"
-              aria-label="Settings"
+              className="flex h-11 items-center gap-1.5 rounded-full bg-white/15 px-3.5 text-sm font-medium active:bg-white/30"
             >
-              ⚙️
+              <span className="text-base leading-none" aria-hidden="true">⚙️</span>
+              Settings
             </Link>
-            <form action={logoutAction}>
-              <button
-                className="rounded-full p-2 text-sm font-medium hover:bg-white/15"
-                title={`Sign out ${props.userName}`}
-              >
-                Sign out
-              </button>
-            </form>
           </div>
         </div>
         <div className="flex items-center gap-2 px-4 pb-3">
           <select
             value={props.accountId ?? ""}
             onChange={(e) => nav({ account: e.target.value || null })}
-            className="min-w-0 flex-1 rounded-lg bg-brand-dark px-3 py-2 text-sm font-medium text-white outline-none"
+            className="h-11 min-w-0 flex-1 rounded-lg bg-brand-dark px-3 text-sm font-medium text-white outline-none"
           >
             <option value="">All accounts</option>
             {activeAccounts.map((a) => (
@@ -107,9 +108,10 @@ export default function Dashboard(props: {
           </select>
           <button
             onClick={() => setTransferDialog({ mode: "new" })}
-            className="rounded-lg bg-brand-dark px-3 py-2 text-sm font-medium hover:bg-brand-darker"
+            className="h-11 rounded-lg bg-brand-dark px-4 text-base font-medium active:bg-brand-darker"
             disabled={activeAccounts.length < 2}
             title="Transfer between accounts"
+            aria-label="Transfer between accounts"
           >
             ⇄
           </button>
@@ -127,7 +129,7 @@ export default function Dashboard(props: {
             <button
               key={p.id}
               onClick={() => nav({ period: p.id, offset: 0 })}
-              className={`flex-1 rounded-lg py-1.5 text-sm font-medium ${
+              className={`flex-1 rounded-lg py-2 text-sm font-medium ${
                 props.period === p.id ? "bg-brand text-white shadow" : "text-gray-600"
               }`}
             >
@@ -139,7 +141,7 @@ export default function Dashboard(props: {
           <div className="mt-2 flex items-center justify-between">
             <button
               onClick={() => nav({ offset: props.offset - 1 })}
-              className="rounded-full px-4 py-1 text-xl text-gray-500 active:bg-gray-200"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-2xl text-gray-500 active:bg-gray-200"
               aria-label="Previous period"
             >
               ‹
@@ -147,7 +149,7 @@ export default function Dashboard(props: {
             <span className="text-sm font-semibold text-gray-700">{data.rangeLabel}</span>
             <button
               onClick={() => nav({ offset: props.offset + 1 })}
-              className="rounded-full px-4 py-1 text-xl text-gray-500 active:bg-gray-200"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-2xl text-gray-500 active:bg-gray-200"
               aria-label="Next period"
             >
               ›
@@ -182,7 +184,32 @@ export default function Dashboard(props: {
 
         {/* Category breakdown */}
         {data.byCategory.length > 0 && (
-          <ul className="mt-3 space-y-1">
+          <button
+            onClick={toggleCats}
+            className="mt-2 flex h-11 w-full items-center justify-between px-1"
+            aria-expanded={catsOpen}
+          >
+            <span className="text-sm font-semibold uppercase tracking-wide text-gray-400">
+              Categories{catsOpen ? "" : ` · ${data.byCategory.length}`}
+            </span>
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-200/70 text-gray-500">
+              <svg
+                viewBox="0 0 24 24"
+                className={`h-4 w-4 transition-transform ${catsOpen ? "" : "-rotate-90"}`}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </span>
+          </button>
+        )}
+        {data.byCategory.length > 0 && catsOpen && (
+          <ul className="space-y-1">
             {data.byCategory.map((s) => (
               <li key={s.categoryId} className="flex items-center gap-3 rounded-xl bg-white px-3 py-2 shadow-sm">
                 <span
@@ -216,24 +243,25 @@ export default function Dashboard(props: {
       <section className="px-4 pt-4">
         <div className="mb-2 flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">Records</h2>
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="🔍 Search"
-            className="w-40 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-brand"
-            aria-label="Search records"
-          />
+          <div className="flex rounded-lg bg-gray-200/70 p-0.5 text-xs font-medium">
+            {(["date", "category"] as const).map((by) => (
+              <button
+                key={by}
+                onClick={() => switchRecordsBy(by)}
+                className={`rounded-md px-3 py-1.5 ${
+                  recordsBy === by ? "bg-white text-gray-800 shadow-sm" : "text-gray-500"
+                }`}
+              >
+                {by === "date" ? "By date" : "By category"}
+              </button>
+            ))}
+          </div>
         </div>
-        {query && (
-          <p className="mb-2 text-xs text-gray-400">
-            {filteredEntries.length} match{filteredEntries.length === 1 ? "" : "es"} in this period
-          </p>
-        )}
         <EntryList
-          entries={filteredEntries}
+          entries={data.entries}
           currency={currency}
           locale={locale}
+          groupBy={recordsBy}
           onEdit={(entry) =>
             entry.kind === "record"
               ? setRecordDialog({ mode: "edit", entry })

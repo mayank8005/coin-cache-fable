@@ -20,8 +20,12 @@ export default async function SettingsPage() {
 
   return (
     <div className="mx-auto min-h-dvh max-w-lg pb-12">
-      <header className="pt-safe sticky top-0 z-20 flex items-center gap-3 bg-brand px-4 py-3 text-white shadow-md">
-        <Link href="/" className="text-2xl leading-none" aria-label="Back">
+      <header className="pt-safe sticky top-0 z-20 flex items-center gap-2 bg-brand px-4 py-2 text-white shadow-md">
+        <Link
+          href="/"
+          className="-ml-3 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-3xl leading-none active:bg-white/20"
+          aria-label="Back"
+        >
           ‹
         </Link>
         <h1 className="text-lg font-bold">Settings</h1>

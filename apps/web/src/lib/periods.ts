@@ -1,11 +1,25 @@
 export type Period = "day" | "week" | "month" | "year" | "all";
 
+// "all" is still a valid Period for rangeFor, but it's not offered as a
+// dashboard tab: unbounded queries grow forever (use search's All time instead).
 export const PERIODS: { id: Period; label: string }[] = [
   { id: "day", label: "Day" },
   { id: "week", label: "Week" },
   { id: "month", label: "Month" },
   { id: "year", label: "Year" },
-  { id: "all", label: "All" },
+];
+
+export const SEARCH_PAGE_SIZE = 200;
+
+export type SearchRange = "month" | "lastmonth" | "3m" | "year" | "all" | "custom";
+
+export const SEARCH_RANGES: { id: SearchRange; label: string }[] = [
+  { id: "month", label: "This month" },
+  { id: "lastmonth", label: "Last month" },
+  { id: "3m", label: "Last 3 months" },
+  { id: "year", label: "This year" },
+  { id: "all", label: "All time" },
+  { id: "custom", label: "Custom…" },
 ];
 
 /** Today's calendar date (YYYY-MM-DD) in the given IANA timezone. */

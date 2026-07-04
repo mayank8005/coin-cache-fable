@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "./db";
-import { rangeFor, todayInTz, type Period } from "./periods";
+import { rangeFor, todayInTz, SEARCH_PAGE_SIZE, type Period } from "./periods";
 
 export type PlainAccount = {
   id: string;
@@ -139,6 +139,170 @@ export async function getCategories(userId: string): Promise<PlainCategory[]> {
     color: c.color,
     archived: c.archived,
   }));
+}
+
+export type SearchFilters = {
+  q: string;
+  type: "EXPENSE" | "INCOME" | "TRANSFER" | null;
+  categoryId: string | null;
+  accountId: string | null;
+  start: string | null;
+  end: string | null;
+  minMinor: number | null;
+  maxMinor: number | null;
+};
+
+export type SearchResult = {
+  entries: Entry[];
+  /** Total matches across all pages; entries holds at most SEARCH_PAGE_SIZE. */
+  totalCount: number;
+  expenseMinor: number;
+  incomeMinor: number;
+};
+
+export async function searchEntries(
+  userId: string,
+  f: SearchFilters,
+  page = 1,
+): Promise<SearchResult> {
+  const dateFilter =
+    f.start || f.end
+      ? {
+          ...(f.start ? { gte: new Date(f.start + "T00:00:00Z") } : {}),
+          ...(f.end ? { lt: new Date(f.end + "T00:00:00Z") } : {}),
+        }
+      : undefined;
+  const q = f.q.trim();
+  const amountFilter =
+    f.minMinor !== null || f.maxMinor !== null
+      ? {
+          amountMinor: {
+            ...(f.minMinor !== null ? { gte: f.minMinor } : {}),
+            ...(f.maxMinor !== null ? { lte: f.maxMinor } : {}),
+          },
+        }
+      : {};
+
+  const wantRecords = f.type !== "TRANSFER";
+  const wantTransfers = (f.type === null || f.type === "TRANSFER") && !f.categoryId;
+
+  const recordWhere = {
+    userId,
+    ...(f.type === "EXPENSE" || f.type === "INCOME" ? { type: f.type } : {}),
+    ...(f.categoryId ? { categoryId: f.categoryId } : {}),
+    ...(f.accountId ? { accountId: f.accountId } : {}),
+    ...(dateFilter ? { date: dateFilter } : {}),
+    ...amountFilter,
+    ...(q
+      ? {
+          OR: [
+            { note: { contains: q, mode: "insensitive" as const } },
+            { category: { name: { contains: q, mode: "insensitive" as const } } },
+            { account: { name: { contains: q, mode: "insensitive" as const } } },
+          ],
+        }
+      : {}),
+  };
+  const transferWhere = {
+    userId,
+    ...(dateFilter ? { date: dateFilter } : {}),
+    ...amountFilter,
+    AND: [
+      ...(f.accountId
+        ? [{ OR: [{ fromAccountId: f.accountId }, { toAccountId: f.accountId }] }]
+        : []),
+      ...(q
+        ? [
+            {
+              OR: [
+                { note: { contains: q, mode: "insensitive" as const } },
+                { fromAccount: { name: { contains: q, mode: "insensitive" as const } } },
+                { toAccount: { name: { contains: q, mode: "insensitive" as const } } },
+              ],
+            },
+          ]
+        : []),
+    ],
+  };
+
+  // The two tables are merged by date, so a page boundary can fall anywhere in
+  // either one: fetch both up to the end of the requested page, then slice.
+  const offset = (page - 1) * SEARCH_PAGE_SIZE;
+  const fetchCount = offset + SEARCH_PAGE_SIZE;
+
+  const [records, transfers, recordTotals, transferCount] = await Promise.all([
+    wantRecords
+      ? prisma.record.findMany({
+          where: recordWhere,
+          include: { category: true, account: true },
+          orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+          take: fetchCount,
+        })
+      : Promise.resolve([]),
+    wantTransfers
+      ? prisma.transfer.findMany({
+          where: transferWhere,
+          include: { fromAccount: true, toAccount: true },
+          orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+          take: fetchCount,
+        })
+      : Promise.resolve([]),
+    wantRecords
+      ? prisma.record.groupBy({
+          by: ["type"],
+          where: recordWhere,
+          _sum: { amountMinor: true },
+          _count: true,
+        })
+      : Promise.resolve([]),
+    wantTransfers ? prisma.transfer.count({ where: transferWhere }) : Promise.resolve(0),
+  ]);
+
+  let expenseMinor = 0;
+  let incomeMinor = 0;
+  let totalCount = transferCount;
+  for (const t of recordTotals) {
+    const sum = Number(t._sum.amountMinor ?? 0);
+    if (t.type === "INCOME") incomeMinor += sum;
+    else expenseMinor += sum;
+    totalCount += t._count;
+  }
+
+  const entries: Entry[] = [
+    ...records.map(
+      (r): Entry => ({
+        kind: "record",
+        id: r.id,
+        type: r.type,
+        amountMinor: Number(r.amountMinor),
+        date: r.date.toISOString().slice(0, 10),
+        note: r.note,
+        accountId: r.accountId,
+        accountName: r.account.name,
+        categoryId: r.categoryId,
+        categoryName: r.category.name,
+        categoryIcon: r.category.icon,
+        categoryColor: r.category.color,
+      }),
+    ),
+    ...transfers.map(
+      (t): Entry => ({
+        kind: "transfer",
+        id: t.id,
+        amountMinor: Number(t.amountMinor),
+        date: t.date.toISOString().slice(0, 10),
+        note: t.note,
+        fromAccountId: t.fromAccountId,
+        fromAccountName: t.fromAccount.name,
+        toAccountId: t.toAccountId,
+        toAccountName: t.toAccount.name,
+      }),
+    ),
+  ]
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+    .slice(offset, offset + SEARCH_PAGE_SIZE);
+
+  return { entries, totalCount, expenseMinor, incomeMinor };
 }
 
 export async function getDashboard(opts: {

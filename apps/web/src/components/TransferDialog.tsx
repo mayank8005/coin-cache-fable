@@ -62,7 +62,11 @@ export default function TransferDialog(props: {
       >
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-bold">{edit ? "Edit transfer" : "Transfer"}</h2>
-          <button onClick={props.onClose} className="text-2xl leading-none text-gray-400" aria-label="Close">
+          <button
+            onClick={props.onClose}
+            className="-mr-2 flex h-11 w-11 items-center justify-center rounded-full text-3xl leading-none text-gray-400 active:bg-gray-200"
+            aria-label="Close"
+          >
             ×
           </button>
         </div>
