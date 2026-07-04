@@ -367,6 +367,7 @@ export default function SettingsView(props: {
   timezone: string;
   isAdmin: boolean;
   currentUserId: string;
+  aiEnabled?: boolean;
 }) {
   return (
     <div>
@@ -381,7 +382,7 @@ export default function SettingsView(props: {
         title="Data"
         subtitle="Import a CSV export from your old expense tracker, or download everything as CSV."
       >
-        <ImportForm />
+        <ImportForm aiEnabled={props.aiEnabled} />
         <a
           href="/api/export"
           className="mt-3 inline-block rounded-lg border border-brand px-4 py-2 text-sm font-semibold text-brand-dark"

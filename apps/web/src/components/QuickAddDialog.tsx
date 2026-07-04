@@ -1,11 +1,23 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { PlainAccount, PlainCategory } from "@/lib/data";
 import { formatMoney } from "@/lib/money";
-import { aiQuickAddAction } from "@/lib/ai-actions";
+import { aiQuickAddAction, aiReceiptAction } from "@/lib/ai-actions";
 import { saveRecordAction } from "@/lib/actions";
+
+/** Downscale a photo client-side so the upload stays small. */
+async function fileToDataUrl(file: File, maxDim = 1280): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  return canvas.toDataURL("image/jpeg", 0.8);
+}
 
 type Proposal = {
   type: "EXPENSE" | "INCOME";
@@ -27,7 +39,9 @@ export default function QuickAddDialog(props: {
   const [text, setText] = useState("");
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
   const [pending, startTransition] = useTransition();
+  const photoRef = useRef<HTMLInputElement>(null);
 
   function parse() {
     setError(null);
@@ -36,6 +50,22 @@ export default function QuickAddDialog(props: {
       if (res.ok && res.proposal) setProposal(res.proposal);
       else setError(res.error ?? "Could not understand that.");
     });
+  }
+
+  async function scanReceipt(file: File) {
+    setError(null);
+    setScanning(true);
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      const res = await aiReceiptAction(dataUrl);
+      if (res.ok && res.proposal) setProposal(res.proposal);
+      else setError(res.error ?? "Could not read that receipt.");
+    } catch {
+      setError("Could not process that image.");
+    } finally {
+      setScanning(false);
+      if (photoRef.current) photoRef.current.value = "";
+    }
   }
 
   function save() {
@@ -82,11 +112,32 @@ export default function QuickAddDialog(props: {
             {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
             <button
               onClick={parse}
-              disabled={pending || text.trim().length < 2}
+              disabled={pending || scanning || text.trim().length < 2}
               className="mt-3 w-full rounded-xl bg-brand py-3 text-base font-semibold text-white shadow disabled:opacity-60"
             >
               {pending ? "Thinking…" : "Parse with AI"}
             </button>
+            <input
+              ref={photoRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void scanReceipt(f);
+              }}
+            />
+            <button
+              onClick={() => photoRef.current?.click()}
+              disabled={pending || scanning}
+              className="mt-2 w-full rounded-xl border border-gray-200 bg-white py-3 text-base font-semibold text-gray-700 disabled:opacity-60"
+            >
+              {scanning ? "Reading receipt…" : "📷 Scan a receipt instead"}
+            </button>
+            <p className="mt-1 text-center text-[11px] text-gray-400">
+              Receipt scanning needs a vision-capable model (e.g. gpt-4o-mini, llama3.2-vision).
+            </p>
           </>
         ) : (
           <div className="space-y-3">

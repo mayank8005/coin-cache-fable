@@ -1,27 +1,55 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { importCsvAction, type ImportResult } from "@/lib/actions";
 
-export default function ImportForm() {
+export default function ImportForm(props: { aiEnabled?: boolean }) {
   const router = useRouter();
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
   const [pending, startTransition] = useTransition();
+  const formRef = useRef<HTMLFormElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
+  function buildFormData(withMapping: boolean): FormData | null {
+    const form = formRef.current;
+    const file = fileRef.current?.files?.[0];
+    if (!form || !file) return null;
+    const fd = new FormData(form);
+    fd.set("file", file);
+    if (withMapping) fd.set("mapping", JSON.stringify(mapping));
+    return fd;
+  }
+
+  function submit(withMapping: boolean) {
+    const fd = buildFormData(withMapping);
+    if (!fd) return;
     startTransition(async () => {
       const res = await importCsvAction(fd);
       setResult(res);
-      if (res.ok) router.refresh();
+      if (res.ok && res.phase === "mapping" && res.unknowns) {
+        setMapping(
+          Object.fromEntries(res.unknowns.map((u) => [`${u.type}:${u.name.toLowerCase()}`, u.suggestion])),
+        );
+      }
+      if (res.ok && !res.phase) router.refresh();
     });
   }
 
+  const inMappingPhase = result?.ok && result.phase === "mapping" && result.unknowns;
+
   return (
-    <form onSubmit={onSubmit} className="space-y-2">
+    <form
+      ref={formRef}
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit(false);
+      }}
+      className="space-y-2"
+    >
       <input
+        ref={fileRef}
         type="file"
         name="file"
         accept=".csv,text/csv"
@@ -41,16 +69,73 @@ export default function ImportForm() {
           <input type="checkbox" name="skipDuplicates" defaultChecked className="accent-brand" />
           Skip duplicates
         </label>
+        {props.aiEnabled && (
+          <label className="flex items-center gap-1.5 text-xs text-gray-500">
+            <input type="checkbox" name="aiMap" defaultChecked className="accent-brand" />
+            ✨ AI category matching
+          </label>
+        )}
       </div>
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:opacity-60"
-      >
-        {pending ? "Importing…" : "Import CSV"}
-      </button>
 
-      {result && (
+      {!inMappingPhase && (
+        <button
+          type="submit"
+          disabled={pending}
+          className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:opacity-60"
+        >
+          {pending ? "Working…" : "Import CSV"}
+        </button>
+      )}
+
+      {inMappingPhase && (
+        <div className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-900">
+          <p className="mb-2 font-medium">
+            {result!.unknowns!.length} unknown categor{result!.unknowns!.length === 1 ? "y" : "ies"} —
+            review where each should go:
+          </p>
+          <ul className="space-y-1.5">
+            {result!.unknowns!.map((u) => {
+              const key = `${u.type}:${u.name.toLowerCase()}`;
+              const options = result!.categoryOptions?.[u.type] ?? [];
+              return (
+                <li key={key} className="flex items-center gap-2 text-xs">
+                  <span className="min-w-0 flex-1 truncate font-medium">
+                    {u.name} <span className="text-blue-400">({u.type.toLowerCase()})</span>
+                  </span>
+                  <span>→</span>
+                  <select
+                    value={mapping[key] ?? "__NEW__"}
+                    onChange={(e) => setMapping({ ...mapping, [key]: e.target.value })}
+                    className="rounded-md border border-blue-200 bg-white px-2 py-1"
+                  >
+                    <option value="__NEW__">Create “{u.name}”</option>
+                    {options.map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={() => submit(true)}
+              disabled={pending}
+              className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:opacity-60"
+            >
+              {pending ? "Importing…" : "Confirm & import"}
+            </button>
+            <button type="button" onClick={() => setResult(null)} className="px-2 text-sm text-gray-500">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {result && !result.phase && (
         <div
           className={`rounded-lg px-3 py-2 text-sm ${
             result.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"

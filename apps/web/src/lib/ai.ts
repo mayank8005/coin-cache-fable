@@ -59,25 +59,25 @@ export async function listModels(baseUrl: string, apiKey: string | null): Promis
   return ids.sort();
 }
 
-/**
- * Chat completion that must return JSON. Tries response_format first
- * (supported by OpenAI and recent Ollama), falls back to plain text +
- * extraction for older servers.
- */
-export async function chatJson(
+type UserContent =
+  | string
+  | ({ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } })[];
+
+async function completion(
   cfg: AiConfig,
   system: string,
-  user: string,
-): Promise<Record<string, unknown>> {
+  user: UserContent,
+  opts: { json: boolean; temperature?: number },
+): Promise<string> {
   if (!cfg.model) throw new Error("No model selected.");
   const call = async (withFormat: boolean) => {
     const res = await fetch(`${normalizeBaseUrl(cfg.baseUrl)}/chat/completions`, {
       method: "POST",
       headers: headers(cfg.apiKey),
-      signal: AbortSignal.timeout(45_000),
+      signal: AbortSignal.timeout(60_000),
       body: JSON.stringify({
         model: cfg.model,
-        temperature: 0,
+        temperature: opts.temperature ?? 0,
         messages: [
           { role: "system", content: system },
           { role: "user", content: user },
@@ -89,18 +89,45 @@ export async function chatJson(
     const body = (await res.json()) as { choices?: { message?: { content?: string } }[] };
     return body.choices?.[0]?.message?.content ?? "";
   };
-
-  let content: string;
+  if (!opts.json) return call(false);
   try {
-    content = await call(true);
+    return await call(true);
   } catch {
-    content = await call(false);
+    return call(false);
   }
+}
+
+/**
+ * Chat completion that must return JSON. Tries response_format first
+ * (supported by OpenAI and recent Ollama), falls back to plain text +
+ * extraction for older servers. Pass an image data URL for
+ * vision-capable models (receipt scanning).
+ */
+export async function chatJson(
+  cfg: AiConfig,
+  system: string,
+  user: string,
+  imageDataUrl?: string,
+): Promise<Record<string, unknown>> {
+  const content: UserContent = imageDataUrl
+    ? [
+        { type: "text", text: user },
+        { type: "image_url", image_url: { url: imageDataUrl } },
+      ]
+    : user;
+  const raw = await completion(cfg, system, content, { json: true });
   try {
-    return JSON.parse(content);
+    return JSON.parse(raw);
   } catch {
-    const match = content.match(/\{[\s\S]*\}/);
+    const match = raw.match(/\{[\s\S]*\}/);
     if (!match) throw new Error("The model did not return valid JSON.");
     return JSON.parse(match[0]);
   }
+}
+
+/** Plain prose completion (insight summaries etc.). */
+export async function chatText(cfg: AiConfig, system: string, user: string): Promise<string> {
+  const text = (await completion(cfg, system, user, { json: false, temperature: 0.4 })).trim();
+  if (!text) throw new Error("The model returned an empty answer.");
+  return text;
 }

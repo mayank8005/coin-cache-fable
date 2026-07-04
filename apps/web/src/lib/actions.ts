@@ -410,6 +410,10 @@ export type ImportResult = {
   createdAccounts?: string[];
   parseErrors?: { line: number; message: string }[];
   dateOrderAmbiguous?: boolean;
+  /** "mapping" = AI categorisation preview: nothing imported yet. */
+  phase?: "mapping";
+  unknowns?: { name: string; type: "EXPENSE" | "INCOME"; suggestion: string }[];
+  categoryOptions?: { EXPENSE: string[]; INCOME: string[] };
 };
 
 export async function importCsvAction(formData: FormData): Promise<ImportResult> {
@@ -440,6 +444,79 @@ export async function importCsvAction(formData: FormData): Promise<ImportResult>
   const createdAccounts: string[] = [];
   const createdCategories: string[] = [];
 
+  // ---- optional AI categorisation: map unknown category names onto the
+  // user's existing set, with a review step before anything is imported.
+  const aiMap = formData.get("aiMap") === "on";
+  let mapping: Record<string, string> | null = null;
+  const mappingRaw = formData.get("mapping");
+  if (typeof mappingRaw === "string" && mappingRaw) {
+    try {
+      mapping = z.record(z.string().max(200)).parse(JSON.parse(mappingRaw));
+    } catch {
+      return { ok: false, error: "Invalid category mapping." };
+    }
+  }
+
+  const unknowns: { name: string; type: "EXPENSE" | "INCOME" }[] = [];
+  const seenUnknown = new Set<string>();
+  for (const row of parsed.rows) {
+    const key = `${row.type}:${row.category.toLowerCase()}`;
+    if (!catByKey.has(key) && !seenUnknown.has(key)) {
+      seenUnknown.add(key);
+      unknowns.push({ name: row.category, type: row.type });
+    }
+  }
+
+  if (aiMap && !mapping && unknowns.length > 0) {
+    const { getAiConfig, chatJson } = await import("./ai");
+    const cfg = await getAiConfig(user.id);
+    const suggestions = new Map<string, string>();
+    if (cfg?.model) {
+      try {
+        const system = [
+          "You map unknown expense-tracker category names onto a user's existing categories. Respond with strict JSON only.",
+          `Schema: {"mappings":[{"name":<unknown name>,"type":"EXPENSE"|"INCOME","target":<existing name or "NEW">}]}`,
+          `Existing expense categories: ${categories.filter((c) => c.type === "EXPENSE").map((c) => c.name).join(", ")}.`,
+          `Existing income categories: ${categories.filter((c) => c.type === "INCOME").map((c) => c.name).join(", ")}.`,
+          'Only use "NEW" when nothing fits reasonably. Match type for type.',
+        ].join("\n");
+        const raw = await chatJson(cfg, system, JSON.stringify({ unknowns }));
+        const parsedMap = z
+          .object({
+            mappings: z.array(
+              z.object({ name: z.string(), type: z.enum(["EXPENSE", "INCOME"]), target: z.string() }),
+            ),
+          })
+          .safeParse(raw);
+        if (parsedMap.success) {
+          for (const m of parsedMap.data.mappings) {
+            suggestions.set(`${m.type}:${m.name.toLowerCase()}`, m.target);
+          }
+        }
+      } catch {
+        // AI unavailable — the preview still works, defaulting to "create new".
+      }
+    }
+    const validTarget = (type: "EXPENSE" | "INCOME", target: string | undefined) =>
+      target && categories.some((c) => c.type === type && c.name.toLowerCase() === target.toLowerCase())
+        ? categories.find((c) => c.type === type && c.name.toLowerCase() === target.toLowerCase())!.name
+        : "__NEW__";
+    return {
+      ok: true,
+      phase: "mapping",
+      unknowns: unknowns.map((u) => ({
+        ...u,
+        suggestion: validTarget(u.type, suggestions.get(`${u.type}:${u.name.toLowerCase()}`)),
+      })),
+      categoryOptions: {
+        EXPENSE: categories.filter((c) => c.type === "EXPENSE" && !c.archived).map((c) => c.name),
+        INCOME: categories.filter((c) => c.type === "INCOME" && !c.archived).map((c) => c.name),
+      },
+      parseErrors: parsed.errors.slice(0, 10),
+      dateOrderAmbiguous: parsed.dateOrderAmbiguous,
+    };
+  }
+
   for (const row of parsed.rows) {
     if (!accountByName.has(row.account.toLowerCase())) {
       const acc = await prisma.account.create({
@@ -455,6 +532,17 @@ export async function importCsvAction(formData: FormData): Promise<ImportResult>
     }
     const key = `${row.type}:${row.category.toLowerCase()}`;
     if (!catByKey.has(key)) {
+      // Honour a confirmed mapping onto an existing category.
+      const target = mapping?.[key];
+      if (target && target !== "__NEW__") {
+        const existing = categories.find(
+          (c) => c.type === row.type && c.name.toLowerCase() === target.toLowerCase(),
+        );
+        if (existing) {
+          catByKey.set(key, existing);
+          continue;
+        }
+      }
       const palette = ["#e35d5d", "#f2a13c", "#4fb0e6", "#ba68c8", "#26a69a", "#7986cb", "#f06292", "#8bc34a"];
       const cat = await prisma.category.create({
         data: {

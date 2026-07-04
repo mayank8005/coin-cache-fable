@@ -198,13 +198,30 @@ export default function AiSettingsView(props: {
         <h2 className="mb-2 text-sm font-semibold">What you get</h2>
         <ul className="space-y-2 text-xs leading-relaxed text-gray-500">
           <li>
-            <strong className="text-gray-700">✨ Quick add (live)</strong> — type “chai 20 with
-            friends yesterday” on the dashboard and it becomes a ready-to-save record.
+            <strong className="text-gray-700">✨ Quick add</strong> — type “chai 20 with friends
+            yesterday” on the dashboard and it becomes a ready-to-save record.
           </li>
           <li>
-            <strong className="text-gray-700">Coming next</strong> — monthly spending insights,
-            smart categorisation for CSV imports, ask-your-data questions, and unusual-spend
-            alerts. See AI_ROADMAP.md in the repository.
+            <strong className="text-gray-700">📷 Receipt scan</strong> — photograph a bill inside
+            Quick add; needs a vision-capable model (gpt-4o-mini, llama3.2-vision, llava).
+          </li>
+          <li>
+            <strong className="text-gray-700">💡 Period insights</strong> — “Explain this period”
+            on the dashboard writes a short summary of where your money went (only category totals
+            are sent, never your records).
+          </li>
+          <li>
+            <strong className="text-gray-700">💬 Ask your data</strong> — questions like “how much
+            on Bills last month?”; the AI only translates your question, the numbers are computed
+            from your data on this server.
+          </li>
+          <li>
+            <strong className="text-gray-700">🗂 Import matching</strong> — during CSV import,
+            unknown categories are matched onto your existing ones, with a review step.
+          </li>
+          <li>
+            <strong className="text-gray-700">Coming next</strong> — unusual-spend alerts,
+            recurring-expense detection, budget coach. See AI_ROADMAP.md in the repository.
           </li>
         </ul>
         <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">

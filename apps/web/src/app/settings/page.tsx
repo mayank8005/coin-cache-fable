@@ -2,13 +2,14 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getAccountsWithBalances, getCategories, getSettings } from "@/lib/data";
+import { aiReady, getAiConfig } from "@/lib/ai";
 import SettingsView from "@/components/SettingsView";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const user = await requireUser();
-  const [accounts, categories, settings, users] = await Promise.all([
+  const [accounts, categories, settings, users, aiConfig] = await Promise.all([
     getAccountsWithBalances(user.id),
     getCategories(user.id),
     getSettings(user.id),
@@ -16,6 +17,7 @@ export default async function SettingsPage() {
       select: { id: true, name: true, email: true, role: true },
       orderBy: { createdAt: "asc" },
     }),
+    getAiConfig(user.id),
   ]);
 
   return (
@@ -35,6 +37,7 @@ export default async function SettingsPage() {
         timezone={settings.timezone}
         isAdmin={user.role === "ADMIN"}
         currentUserId={user.id}
+        aiEnabled={aiReady(aiConfig)}
       />
     </div>
   );

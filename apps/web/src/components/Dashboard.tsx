@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Dashboard as DashboardData, Entry, PlainAccount, PlainCategory } from "@/lib/data";
@@ -12,6 +12,7 @@ import EntryList from "./EntryList";
 import RecordDialog from "./RecordDialog";
 import TransferDialog from "./TransferDialog";
 import QuickAddDialog from "./QuickAddDialog";
+import { aiInsightsAction } from "@/lib/ai-actions";
 
 export default function Dashboard(props: {
   userName: string;
@@ -41,6 +42,22 @@ export default function Dashboard(props: {
   >(null);
   const [query, setQuery] = useState("");
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [insights, setInsights] = useState<{ open: boolean; text?: string; error?: string }>({
+    open: false,
+  });
+  const [insightsPending, startInsights] = useTransition();
+
+  function loadInsights() {
+    setInsights({ open: true });
+    startInsights(async () => {
+      const res = await aiInsightsAction({
+        period: props.period,
+        offset: props.offset,
+        accountId: props.accountId,
+      });
+      setInsights({ open: true, text: res.text, error: res.ok ? undefined : res.error });
+    });
+  }
 
   const filteredEntries = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -117,13 +134,22 @@ export default function Dashboard(props: {
             ⇄
           </button>
           {props.aiEnabled && (
-            <button
-              onClick={() => setQuickAddOpen(true)}
-              className="rounded-lg bg-brand-dark px-3 py-2 text-sm font-medium hover:bg-brand-darker"
-              title="AI quick add"
-            >
-              ✨
-            </button>
+            <>
+              <button
+                onClick={() => setQuickAddOpen(true)}
+                className="rounded-lg bg-brand-dark px-3 py-2 text-sm font-medium hover:bg-brand-darker"
+                title="AI quick add"
+              >
+                ✨
+              </button>
+              <Link
+                href="/assistant"
+                className="rounded-lg bg-brand-dark px-3 py-2 text-sm font-medium hover:bg-brand-darker"
+                title="Ask your data"
+              >
+                💬
+              </Link>
+            </>
           )}
           <div className="text-right">
             <div className="text-[11px] uppercase tracking-wide text-white/75">Balance</div>
@@ -191,6 +217,15 @@ export default function Dashboard(props: {
             </div>
           </div>
         </div>
+
+        {props.aiEnabled && data.entries.length > 0 && (
+          <button
+            onClick={loadInsights}
+            className="mt-2 w-full rounded-xl border border-dashed border-brand/40 bg-brand/5 py-2 text-sm font-medium text-brand-dark active:bg-brand/10"
+          >
+            💡 Explain this period
+          </button>
+        )}
 
         {/* Category breakdown */}
         {data.byCategory.length > 0 && (
@@ -306,6 +341,35 @@ export default function Dashboard(props: {
           locale={locale}
           onClose={() => setQuickAddOpen(false)}
         />
+      )}
+      {insights.open && (
+        <div
+          className="fixed inset-0 z-40 flex items-end justify-center bg-black/45 sm:items-center"
+          onClick={() => setInsights({ open: false })}
+        >
+          <div
+            className="pb-safe w-full max-w-lg rounded-t-2xl bg-surface p-4 shadow-2xl sm:rounded-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-lg font-bold">💡 {data.rangeLabel}</h2>
+              <button
+                onClick={() => setInsights({ open: false })}
+                className="text-2xl leading-none text-gray-400"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            {insightsPending ? (
+              <p className="py-6 text-center text-sm text-gray-400">Analysing your period…</p>
+            ) : insights.error ? (
+              <p className="text-sm text-red-600">{insights.error}</p>
+            ) : (
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{insights.text}</p>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
