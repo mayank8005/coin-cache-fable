@@ -19,6 +19,7 @@ export type PlainCategory = {
   icon: string;
   color: string;
   archived: boolean;
+  usageCount: number;
 };
 
 export type Entry =
@@ -127,10 +128,18 @@ export async function getAccountsWithBalances(userId: string): Promise<PlainAcco
 }
 
 export async function getCategories(userId: string): Promise<PlainCategory[]> {
-  const cats = await prisma.category.findMany({
-    where: { userId },
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-  });
+  const [cats, usage] = await Promise.all([
+    prisma.category.findMany({
+      where: { userId },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    }),
+    prisma.record.groupBy({
+      by: ["categoryId"],
+      where: { userId },
+      _count: true,
+    }),
+  ]);
+  const counts = new Map(usage.map((u) => [u.categoryId, u._count]));
   return cats.map((c) => ({
     id: c.id,
     name: c.name,
@@ -138,6 +147,7 @@ export async function getCategories(userId: string): Promise<PlainCategory[]> {
     icon: c.icon,
     color: c.color,
     archived: c.archived,
+    usageCount: counts.get(c.id) ?? 0,
   }));
 }
 

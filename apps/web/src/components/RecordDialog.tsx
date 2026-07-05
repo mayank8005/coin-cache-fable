@@ -62,7 +62,10 @@ export default function RecordDialog(props: {
 
   const value = round2(evaluate(calc));
   const amountMinor = Math.round(value * 100);
-  const categories = props.categories.filter((c) => c.type === type);
+  // Most-used categories first; ties keep the manual sortOrder (sort is stable).
+  const categories = props.categories
+    .filter((c) => c.type === type)
+    .sort((a, b) => b.usageCount - a.usageCount);
 
   function press(key: string) {
     setError(null);
