@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   createLatestRequestGate,
   createTrailingThrottle,
+  normalizeDescription,
   rankDescriptionSuggestions,
   validateRecordDescription,
   type DescriptionCandidate,
@@ -13,7 +14,7 @@ const candidates: DescriptionCandidate[] = [
   { type: "EXPENSE", description: "Coffee", usageCount: 2, lastUsedAt: "2026-01-01" },
   { type: "EXPENSE", description: "  coffee  ", usageCount: 2, lastUsedAt: "2026-03-01" },
   { type: "EXPENSE", description: "Coffee beans", usageCount: 3, lastUsedAt: "2026-02-01" },
-  { type: "EXPENSE", description: "Office coffee", usageCount: 3, lastUsedAt: "2026-04-01" },
+  { type: "EXPENSE", description: "Office   coffee", usageCount: 3, lastUsedAt: "2026-04-01" },
   { type: "EXPENSE", description: "Tea", usageCount: 4, lastUsedAt: "2026-04-01" },
   { type: "EXPENSE", description: "Alpha", usageCount: 1, lastUsedAt: "2026-05-01" },
   { type: "EXPENSE", description: "Beta", usageCount: 1, lastUsedAt: "2026-05-01" },
@@ -35,6 +36,10 @@ test("filters substrings, merges case variants and excludes exact matches", () =
     "Office coffee",
     "Coffee beans",
   ]);
+  assert.deepEqual(rankDescriptionSuggestions(candidates, "EXPENSE", "office c"), [
+    "Office coffee",
+  ]);
+  assert.equal(normalizeDescription("  Office   coffee\nshop "), "Office coffee shop");
 });
 
 test("uses a deterministic alphabetical final tie-breaker", () => {

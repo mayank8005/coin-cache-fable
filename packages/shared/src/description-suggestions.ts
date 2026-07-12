@@ -10,7 +10,7 @@ export type DescriptionCandidate = {
   lastUsedAt: Date | string | number;
 };
 
-function collapseWhitespace(value: string): string {
+export function normalizeDescription(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
 
@@ -31,7 +31,7 @@ export function rankDescriptionSuggestions(
 ): string[] {
   if (limit <= 0) return [];
 
-  const normalizedQuery = collapseWhitespace(query).toLowerCase();
+  const normalizedQuery = normalizeDescription(query).toLowerCase();
   const grouped = new Map<
     string,
     { description: string; usageCount: number; lastUsedAt: number }
@@ -39,7 +39,7 @@ export function rankDescriptionSuggestions(
 
   for (const candidate of candidates) {
     if (candidate.type !== type) continue;
-    const description = collapseWhitespace(candidate.description);
+    const description = normalizeDescription(candidate.description);
     if (!description) continue;
     const key = description.toLowerCase();
     if (normalizedQuery && !key.includes(normalizedQuery)) continue;

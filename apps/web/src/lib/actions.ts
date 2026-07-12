@@ -6,11 +6,13 @@ import { z } from "zod";
 import {
   DEFAULT_CATEGORIES,
   DESCRIPTION_MAX_LENGTH,
+  normalizeDescription,
   rankDescriptionSuggestions,
   parseExpenseCsv,
   type DateOrder,
+  type RecordEntryType,
 } from "@coincache/shared";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 import {
   checkRateLimit,
@@ -250,27 +252,35 @@ export async function getDescriptionSuggestionsAction(
     return { ok: false, suggestions: [], error: "Invalid suggestion request." };
   }
 
-  const query = parsed.data.query.trim();
-  const groups = await prisma.record.groupBy({
-    by: ["type", "note"],
-    where: {
-      userId: user.id,
-      type: parsed.data.type,
-      note: {
-        not: "",
-        ...(query ? { contains: query, mode: "insensitive" as const } : {}),
-      },
-    },
-    _count: { _all: true },
-    _max: { createdAt: true },
-  });
+  const query = normalizeDescription(parsed.data.query);
+  const normalizedQuery = query.toLowerCase();
+  const queryFilter = normalizedQuery
+    ? Prisma.sql`AND STRPOS(
+        REGEXP_REPLACE(LOWER(BTRIM("note")), '[[:space:]]+', ' ', 'g'),
+        ${normalizedQuery}
+      ) > 0`
+    : Prisma.empty;
+  const groups = await prisma.$queryRaw<
+    { note: string; usageCount: bigint; lastUsedAt: Date | null }[]
+  >(Prisma.sql`
+    SELECT
+      "note",
+      COUNT(*)::bigint AS "usageCount",
+      MAX("createdAt") AS "lastUsedAt"
+    FROM "Record"
+    WHERE "userId" = ${user.id}
+      AND "type" = CAST(${parsed.data.type} AS "EntryType")
+      AND BTRIM("note") <> ''
+      ${queryFilter}
+    GROUP BY "note"
+  `);
 
   const suggestions = rankDescriptionSuggestions(
     groups.map((group) => ({
-      type: group.type,
+      type: parsed.data.type as RecordEntryType,
       description: group.note,
-      usageCount: group._count._all,
-      lastUsedAt: group._max.createdAt ?? 0,
+      usageCount: Number(group.usageCount),
+      lastUsedAt: group.lastUsedAt ?? 0,
     })),
     parsed.data.type,
     query,
