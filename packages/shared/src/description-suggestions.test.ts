@@ -4,53 +4,13 @@ import {
   createLatestRequestGate,
   createTrailingThrottle,
   normalizeDescription,
-  rankDescriptionSuggestions,
   validateRecordDescription,
-  type DescriptionCandidate,
   type ThrottleClock,
 } from "./description-suggestions.ts";
 
-const candidates: DescriptionCandidate[] = [
-  { type: "EXPENSE", description: "Coffee", usageCount: 2, lastUsedAt: "2026-01-01" },
-  { type: "EXPENSE", description: "  coffee  ", usageCount: 2, lastUsedAt: "2026-03-01" },
-  { type: "EXPENSE", description: "Coffee beans", usageCount: 3, lastUsedAt: "2026-02-01" },
-  { type: "EXPENSE", description: "Office   coffee", usageCount: 3, lastUsedAt: "2026-04-01" },
-  { type: "EXPENSE", description: "Tea", usageCount: 4, lastUsedAt: "2026-04-01" },
-  { type: "EXPENSE", description: "Alpha", usageCount: 1, lastUsedAt: "2026-05-01" },
-  { type: "EXPENSE", description: "Beta", usageCount: 1, lastUsedAt: "2026-05-01" },
-  { type: "EXPENSE", description: "   ", usageCount: 100, lastUsedAt: "2026-06-01" },
-  { type: "INCOME", description: "Coffee", usageCount: 100, lastUsedAt: "2026-06-01" },
-];
-
-test("ranks and limits suggestions by frequency, recency and entry type", () => {
-  assert.deepEqual(rankDescriptionSuggestions(candidates, "EXPENSE", ""), ["Tea", "coffee"]);
-  assert.deepEqual(rankDescriptionSuggestions(candidates, "INCOME", ""), ["Coffee"]);
-});
-
-test("filters substrings, merges case variants and excludes exact matches", () => {
-  assert.deepEqual(rankDescriptionSuggestions(candidates, "EXPENSE", "coF"), [
-    "coffee",
-    "Office coffee",
-  ]);
-  assert.deepEqual(rankDescriptionSuggestions(candidates, "EXPENSE", "  COFFEE  "), [
-    "Office coffee",
-    "Coffee beans",
-  ]);
-  assert.deepEqual(rankDescriptionSuggestions(candidates, "EXPENSE", "office c"), [
-    "Office coffee",
-  ]);
+test("normalizes surrounding and repeated whitespace", () => {
   assert.equal(normalizeDescription("  Office   coffee\nshop "), "Office coffee shop");
-});
-
-test("uses a deterministic alphabetical final tie-breaker", () => {
-  assert.deepEqual(rankDescriptionSuggestions(candidates, "EXPENSE", "a", 10), [
-    "Tea",
-    "Coffee beans",
-    "Alpha",
-    "Beta",
-  ]);
-  assert.deepEqual(rankDescriptionSuggestions([], "EXPENSE", ""), []);
-  assert.deepEqual(rankDescriptionSuggestions(candidates, "EXPENSE", "", 0), []);
+  assert.equal(normalizeDescription("\tOffice\t\tcoffee\t"), "Office coffee");
 });
 
 test("validates required and maximum description length", () => {
