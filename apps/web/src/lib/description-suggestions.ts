@@ -11,15 +11,28 @@ export async function findDescriptionSuggestions(
   },
 ): Promise<string[]> {
   const rows = await db.$queryRaw<{ description: string }[]>(Prisma.sql`
-    WITH normalized AS (
+    WITH unicode_normalized AS (
+      SELECT
+        TRANSLATE(
+          "note",
+          CHR(160) || CHR(5760) ||
+          CHR(8192) || CHR(8193) || CHR(8194) || CHR(8195) || CHR(8196) ||
+          CHR(8197) || CHR(8198) || CHR(8199) || CHR(8200) || CHR(8201) ||
+          CHR(8202) || CHR(8232) || CHR(8233) || CHR(8239) || CHR(8287) ||
+          CHR(12288) || CHR(65279),
+          REPEAT(' ', 19)
+        ) AS "note",
+        "createdAt"
+      FROM "Record"
+      WHERE "userId" = ${input.userId}
+        AND "type" = CAST(${input.type} AS "EntryType")
+    ), normalized AS (
       SELECT
         BTRIM(REGEXP_REPLACE("note", '[[:space:]]+', ' ', 'g')) AS "description",
         LOWER(BTRIM(REGEXP_REPLACE("note", '[[:space:]]+', ' ', 'g')))
           AS "normalizedDescription",
         "createdAt"
-      FROM "Record"
-      WHERE "userId" = ${input.userId}
-        AND "type" = CAST(${input.type} AS "EntryType")
+      FROM unicode_normalized
     ), ranked AS (
       SELECT
         "normalizedDescription",

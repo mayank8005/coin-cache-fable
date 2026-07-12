@@ -11,6 +11,8 @@ import {
 test("normalizes surrounding and repeated whitespace", () => {
   assert.equal(normalizeDescription("  Office   coffee\nshop "), "Office coffee shop");
   assert.equal(normalizeDescription("\tOffice\t\tcoffee\t"), "Office coffee");
+  assert.equal(normalizeDescription("Office\u00a0coffee"), "Office coffee");
+  assert.equal(normalizeDescription("\u202fOffice\ufeffcoffee\u3000"), "Office coffee");
 });
 
 test("validates required and maximum description length", () => {

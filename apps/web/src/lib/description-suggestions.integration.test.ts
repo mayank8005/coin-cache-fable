@@ -35,11 +35,13 @@ before(async () => {
     data: [
       { note: "Office coffee", createdAt: new Date(now - 8_000) },
       { note: "\tOffice\t\tcoffee\t", createdAt: new Date(now - 7_000) },
-      { note: "\t\n  \t", createdAt: new Date(now - 6_000) },
-      { note: "Recent older", createdAt: new Date(now - 5_000) },
-      { note: "Recent newer", createdAt: new Date(now - 4_000) },
-      { note: "Tie beta", createdAt: new Date(now - 3_000) },
-      { note: "Tie alpha", createdAt: new Date(now - 3_000) },
+      { note: "Office\u00a0coffee", createdAt: new Date(now - 6_000) },
+      { note: "\t\n  \t", createdAt: new Date(now - 5_000) },
+      { note: "\u00a0\u202f\ufeff", createdAt: new Date(now - 4_500) },
+      { note: "Recent older", createdAt: new Date(now - 4_000) },
+      { note: "Recent newer", createdAt: new Date(now - 3_000) },
+      { note: "Tie beta", createdAt: new Date(now - 2_000) },
+      { note: "Tie alpha", createdAt: new Date(now - 2_000) },
     ].map((record, index) => ({
       ...record,
       userId,
