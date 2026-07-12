@@ -10,8 +10,9 @@ import {
   parseExpenseCsv,
   type DateOrder,
 } from "@coincache/shared";
-import { Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "./db";
+import { findDescriptionSuggestions } from "./description-suggestions";
 import {
   checkRateLimit,
   clientIp,
@@ -255,36 +256,13 @@ export async function getDescriptionSuggestionsAction(
 
   const query = normalizeDescription(parsed.data.query);
   const normalizedQuery = query.toLowerCase();
-  const suggestions = await prisma.$queryRaw<{ description: string }[]>(Prisma.sql`
-    WITH normalized AS (
-      SELECT
-        REGEXP_REPLACE(BTRIM("note"), '[[:space:]]+', ' ', 'g') AS "description",
-        LOWER(REGEXP_REPLACE(BTRIM("note"), '[[:space:]]+', ' ', 'g'))
-          AS "normalizedDescription",
-        "createdAt"
-      FROM "Record"
-      WHERE "userId" = ${user.id}
-        AND "type" = CAST(${parsed.data.type} AS "EntryType")
-        AND BTRIM("note") <> ''
-    ), ranked AS (
-      SELECT
-        "normalizedDescription",
-        (ARRAY_AGG("description" ORDER BY "createdAt" DESC, "description" ASC))[1]
-          AS "description",
-        COUNT(*) AS "usageCount",
-        MAX("createdAt") AS "lastUsedAt"
-      FROM normalized
-      WHERE (${normalizedQuery} = '' OR STRPOS("normalizedDescription", ${normalizedQuery}) > 0)
-        AND "normalizedDescription" <> ${normalizedQuery}
-      GROUP BY "normalizedDescription"
-    )
-    SELECT "description"
-    FROM ranked
-    ORDER BY "usageCount" DESC, "lastUsedAt" DESC, "normalizedDescription" ASC
-    LIMIT 2
-  `);
+  const suggestions = await findDescriptionSuggestions(prisma, {
+    userId: user.id,
+    type: parsed.data.type,
+    normalizedQuery,
+  });
 
-  return { ok: true, suggestions: suggestions.map((row) => row.description) };
+  return { ok: true, suggestions };
 }
 
 export async function deleteRecordAction(id: unknown): Promise<ActionResult> {
