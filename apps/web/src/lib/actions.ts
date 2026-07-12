@@ -3,7 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { DEFAULT_CATEGORIES, parseExpenseCsv, type DateOrder } from "@coincache/shared";
+import {
+  DEFAULT_CATEGORIES,
+  DESCRIPTION_MAX_LENGTH,
+  rankDescriptionSuggestions,
+  parseExpenseCsv,
+  type DateOrder,
+} from "@coincache/shared";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 import {
@@ -177,7 +183,14 @@ const recordSchema = z.object({
   type: z.enum(["EXPENSE", "INCOME"]),
   amountMinor: amountSchema,
   date: dateSchema,
-  note: z.string().max(500).default(""),
+  note: z
+    .string()
+    .trim()
+    .min(1, "Enter a description.")
+    .max(
+      DESCRIPTION_MAX_LENGTH,
+      `Description must be ${DESCRIPTION_MAX_LENGTH} characters or fewer.`,
+    ),
   accountId: idSchema,
   categoryId: idSchema,
 });
@@ -185,7 +198,10 @@ const recordSchema = z.object({
 export async function saveRecordAction(input: unknown): Promise<ActionResult> {
   const user = await requireUser();
   const parsed = recordSchema.safeParse(input);
-  if (!parsed.success) return fail("Invalid record data.");
+  if (!parsed.success) {
+    const descriptionIssue = parsed.error.issues.find((issue) => issue.path[0] === "note");
+    return fail(descriptionIssue?.message ?? "Invalid record data.");
+  }
   const { id, type, amountMinor, date, note, accountId, categoryId } = parsed.data;
 
   // Ownership checks: the category, account and (when editing) the
@@ -214,6 +230,54 @@ export async function saveRecordAction(input: unknown): Promise<ActionResult> {
   }
   revalidatePath("/");
   return { ok: true };
+}
+
+const descriptionSuggestionSchema = z.object({
+  type: z.enum(["EXPENSE", "INCOME"]),
+  query: z.string().max(DESCRIPTION_MAX_LENGTH),
+});
+
+export type DescriptionSuggestionResult =
+  | { ok: true; suggestions: string[] }
+  | { ok: false; suggestions: []; error: string };
+
+export async function getDescriptionSuggestionsAction(
+  input: unknown,
+): Promise<DescriptionSuggestionResult> {
+  const user = await requireUser();
+  const parsed = descriptionSuggestionSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, suggestions: [], error: "Invalid suggestion request." };
+  }
+
+  const query = parsed.data.query.trim();
+  const groups = await prisma.record.groupBy({
+    by: ["type", "note"],
+    where: {
+      userId: user.id,
+      type: parsed.data.type,
+      note: {
+        not: "",
+        ...(query ? { contains: query, mode: "insensitive" as const } : {}),
+      },
+    },
+    _count: { _all: true },
+    _max: { createdAt: true },
+  });
+
+  const suggestions = rankDescriptionSuggestions(
+    groups.map((group) => ({
+      type: group.type,
+      description: group.note,
+      usageCount: group._count._all,
+      lastUsedAt: group._max.createdAt ?? 0,
+    })),
+    parsed.data.type,
+    query,
+    2,
+  );
+
+  return { ok: true, suggestions };
 }
 
 export async function deleteRecordAction(id: unknown): Promise<ActionResult> {

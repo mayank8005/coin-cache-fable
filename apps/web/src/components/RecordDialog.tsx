@@ -1,14 +1,26 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import {
+  createLatestRequestGate,
+  createTrailingThrottle,
+  DESCRIPTION_MAX_LENGTH,
+  validateRecordDescription,
+  type RecordEntryType,
+} from "@coincache/shared";
 import type { Entry, PlainAccount, PlainCategory } from "@/lib/data";
 import { formatMoney } from "@/lib/money";
-import { deleteRecordAction, saveRecordAction } from "@/lib/actions";
+import {
+  deleteRecordAction,
+  getDescriptionSuggestionsAction,
+  saveRecordAction,
+} from "@/lib/actions";
 
 type Op = "+" | "-" | "*" | "/";
 
 type Calc = { acc: number | null; op: Op | null; cur: string };
+type SuggestionRequest = { type: RecordEntryType; query: string };
 
 function evaluate(c: Calc): number {
   const cur = parseFloat(c.cur || "0") || 0;
@@ -53,12 +65,52 @@ export default function RecordDialog(props: {
     op: null,
     cur: editEntry ? String(editEntry.amountMinor / 100) : "",
   });
-  const [note, setNote] = useState(editEntry?.note ?? "");
+  const [description, setDescription] = useState(editEntry?.note ?? "");
   const [date, setDate] = useState(editEntry?.date ?? props.todayIso);
   const [accountId, setAccountId] = useState(editEntry?.accountId ?? props.defaultAccountId);
   const [step, setStep] = useState<"amount" | "category">("amount");
   const [error, setError] = useState<string | null>(null);
+  const [descriptionError, setDescriptionError] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [pending, startTransition] = useTransition();
+  const descriptionInputRef = useRef<HTMLInputElement>(null);
+  const descriptionValueRef = useRef(description);
+  const suggestionRequestGate = useRef(createLatestRequestGate());
+  const requestSuggestionsRef = useRef<(request: SuggestionRequest) => void>(() => undefined);
+  const suggestionThrottleRef = useRef(
+    createTrailingThrottle(
+      (request: SuggestionRequest) => requestSuggestionsRef.current(request),
+      300,
+    ),
+  );
+
+  descriptionValueRef.current = description;
+  requestSuggestionsRef.current = async (request) => {
+    const isCurrentRequest = suggestionRequestGate.current.begin();
+    try {
+      const result = await getDescriptionSuggestionsAction(request);
+      if (!isCurrentRequest()) return;
+      setSuggestions(result.ok ? result.suggestions : []);
+    } catch {
+      if (isCurrentRequest()) setSuggestions([]);
+    }
+  };
+
+  useEffect(() => {
+    if (editEntry) return;
+    const throttle = suggestionThrottleRef.current;
+    throttle.cancel();
+    setSuggestions([]);
+    throttle.call({ type, query: descriptionValueRef.current });
+  }, [type, editEntry]);
+
+  useEffect(
+    () => () => {
+      suggestionThrottleRef.current.cancel();
+      suggestionRequestGate.current.invalidate();
+    },
+    [],
+  );
 
   const value = round2(evaluate(calc));
   const amountMinor = Math.round(value * 100);
@@ -92,19 +144,56 @@ export default function RecordDialog(props: {
     });
   }
 
+  function requireDescription(): boolean {
+    const validationError = validateRecordDescription(description);
+    if (!validationError) {
+      setDescriptionError(null);
+      return true;
+    }
+    setDescriptionError(validationError);
+    setStep("amount");
+    setTimeout(() => descriptionInputRef.current?.focus(), 0);
+    return false;
+  }
+
+  function changeDescription(value: string) {
+    setDescription(value);
+    setDescriptionError(null);
+    if (editEntry) return;
+
+    suggestionRequestGate.current.invalidate();
+    const normalized = value.trim().replace(/\s+/g, " ").toLowerCase();
+    setSuggestions((current) =>
+      current.filter((suggestion) => {
+        const candidate = suggestion.trim().replace(/\s+/g, " ").toLowerCase();
+        return candidate !== normalized && (!normalized || candidate.includes(normalized));
+      }),
+    );
+    suggestionThrottleRef.current.call({ type, query: value });
+  }
+
+  function changeType(nextType: RecordEntryType) {
+    if (nextType === type) return;
+    suggestionRequestGate.current.invalidate();
+    suggestionThrottleRef.current.cancel();
+    setSuggestions([]);
+    setType(nextType);
+  }
+
   function save(categoryId: string) {
     if (amountMinor <= 0) {
       setError("Enter an amount first.");
       setStep("amount");
       return;
     }
+    if (!requireDescription()) return;
     startTransition(async () => {
       const res = await saveRecordAction({
         id: editEntry?.id,
         type,
         amountMinor,
         date,
-        note,
+        note: description,
         accountId,
         categoryId,
       });
@@ -112,7 +201,12 @@ export default function RecordDialog(props: {
         props.onClose();
         router.refresh();
       } else {
-        setError(res.error ?? "Something went wrong.");
+        if (res.error?.toLowerCase().includes("description")) {
+          setDescriptionError(res.error);
+          setTimeout(() => descriptionInputRef.current?.focus(), 0);
+        } else {
+          setError(res.error ?? "Something went wrong.");
+        }
         setStep("amount");
       }
     });
@@ -153,13 +247,13 @@ export default function RecordDialog(props: {
           </button>
           <div className="flex gap-1 rounded-lg bg-black/15 p-0.5 text-sm font-medium">
             <button
-              onClick={() => setType("EXPENSE")}
+              onClick={() => changeType("EXPENSE")}
               className={`rounded-md px-3 py-1.5 ${type === "EXPENSE" ? "bg-white text-expense" : ""}`}
             >
               Expense
             </button>
             <button
-              onClick={() => setType("INCOME")}
+              onClick={() => changeType("INCOME")}
               className={`rounded-md px-3 py-1.5 ${type === "INCOME" ? "bg-white text-income" : ""}`}
             >
               Income
@@ -208,14 +302,54 @@ export default function RecordDialog(props: {
                 className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm"
               />
             </div>
-            <input
-              type="text"
-              placeholder="Note (optional)"
-              value={note}
-              maxLength={500}
-              onChange={(e) => setNote(e.target.value)}
-              className="mb-3 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            />
+            <div className="mb-3">
+              <label
+                htmlFor="record-description"
+                className="mb-1 block text-xs font-medium text-gray-600"
+              >
+                Description <span className="text-red-600" aria-hidden="true">*</span>
+              </label>
+              <input
+                ref={descriptionInputRef}
+                id="record-description"
+                type="text"
+                placeholder="What was this for?"
+                value={description}
+                required
+                autoComplete="off"
+                maxLength={DESCRIPTION_MAX_LENGTH}
+                aria-invalid={descriptionError ? "true" : undefined}
+                aria-describedby={descriptionError ? "record-description-error" : undefined}
+                onChange={(e) => changeDescription(e.target.value)}
+                className={`w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-brand ${
+                  descriptionError ? "border-red-500" : "border-gray-200"
+                }`}
+              />
+              {descriptionError && (
+                <p id="record-description-error" className="mt-1 text-xs text-red-600">
+                  {descriptionError}
+                </p>
+              )}
+              {!editEntry && suggestions.length > 0 && (
+                <div
+                  className="mt-2 flex flex-wrap gap-2"
+                  aria-label="Description suggestions"
+                  aria-live="polite"
+                >
+                  {suggestions.slice(0, 2).map((suggestion) => (
+                    <button
+                      key={suggestion.toLowerCase()}
+                      type="button"
+                      onClick={() => changeDescription(suggestion)}
+                      className="max-w-full truncate rounded-full border border-brand/25 bg-brand/10 px-3 py-1.5 text-xs font-medium text-brand-dark active:bg-brand/20"
+                      title={suggestion}
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Keypad */}
             <div className="grid grid-cols-4 gap-2">
@@ -237,8 +371,8 @@ export default function RecordDialog(props: {
             <button
               onClick={() => {
                 if (calc.op !== null) press("=");
-                else if (amountMinor > 0) setStep("category");
-                else setError("Enter an amount first.");
+                else if (amountMinor <= 0) setError("Enter an amount first.");
+                else if (requireDescription()) setStep("category");
               }}
               disabled={pending}
               className={`mt-3 w-full rounded-xl py-3 text-base font-semibold text-white shadow ${
