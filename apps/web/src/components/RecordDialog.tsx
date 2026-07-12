@@ -201,8 +201,8 @@ export default function RecordDialog(props: {
         props.onClose();
         router.refresh();
       } else {
-        if (res.error?.toLowerCase().includes("description")) {
-          setDescriptionError(res.error);
+        if (res.field === "description") {
+          setDescriptionError(res.error ?? "Enter a description.");
           setTimeout(() => descriptionInputRef.current?.focus(), 0);
         } else {
           setError(res.error ?? "Something went wrong.");

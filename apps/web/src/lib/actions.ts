@@ -7,10 +7,8 @@ import {
   DEFAULT_CATEGORIES,
   DESCRIPTION_MAX_LENGTH,
   normalizeDescription,
-  rankDescriptionSuggestions,
   parseExpenseCsv,
   type DateOrder,
-  type RecordEntryType,
 } from "@coincache/shared";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
@@ -25,7 +23,8 @@ import {
   verifyPassword,
 } from "./auth";
 
-export type ActionResult = { ok: boolean; error?: string };
+export type ActionErrorField = "description";
+export type ActionResult = { ok: boolean; error?: string; field?: ActionErrorField };
 
 const emailSchema = z.string().trim().toLowerCase().email().max(200);
 const passwordSchema = z.string().min(8, "Password must be at least 8 characters").max(200);
@@ -36,8 +35,8 @@ const amountSchema = z.number().int().positive().max(9_000_000_000_000);
 const colorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const iconSchema = z.string().min(1).max(8);
 
-function fail(error: string): ActionResult {
-  return { ok: false, error };
+function fail(error: string, field?: ActionErrorField): ActionResult {
+  return { ok: false, error, ...(field ? { field } : {}) };
 }
 
 /** Seed a brand-new user's private space: Cash account + default categories + settings. */
@@ -202,7 +201,9 @@ export async function saveRecordAction(input: unknown): Promise<ActionResult> {
   const parsed = recordSchema.safeParse(input);
   if (!parsed.success) {
     const descriptionIssue = parsed.error.issues.find((issue) => issue.path[0] === "note");
-    return fail(descriptionIssue?.message ?? "Invalid record data.");
+    return descriptionIssue
+      ? fail(descriptionIssue.message, "description")
+      : fail("Invalid record data.");
   }
   const { id, type, amountMinor, date, note, accountId, categoryId } = parsed.data;
 
@@ -254,40 +255,36 @@ export async function getDescriptionSuggestionsAction(
 
   const query = normalizeDescription(parsed.data.query);
   const normalizedQuery = query.toLowerCase();
-  const queryFilter = normalizedQuery
-    ? Prisma.sql`AND STRPOS(
-        REGEXP_REPLACE(LOWER(BTRIM("note")), '[[:space:]]+', ' ', 'g'),
-        ${normalizedQuery}
-      ) > 0`
-    : Prisma.empty;
-  const groups = await prisma.$queryRaw<
-    { note: string; usageCount: bigint; lastUsedAt: Date | null }[]
-  >(Prisma.sql`
-    SELECT
-      "note",
-      COUNT(*)::bigint AS "usageCount",
-      MAX("createdAt") AS "lastUsedAt"
-    FROM "Record"
-    WHERE "userId" = ${user.id}
-      AND "type" = CAST(${parsed.data.type} AS "EntryType")
-      AND BTRIM("note") <> ''
-      ${queryFilter}
-    GROUP BY "note"
+  const suggestions = await prisma.$queryRaw<{ description: string }[]>(Prisma.sql`
+    WITH normalized AS (
+      SELECT
+        REGEXP_REPLACE(BTRIM("note"), '[[:space:]]+', ' ', 'g') AS "description",
+        LOWER(REGEXP_REPLACE(BTRIM("note"), '[[:space:]]+', ' ', 'g'))
+          AS "normalizedDescription",
+        "createdAt"
+      FROM "Record"
+      WHERE "userId" = ${user.id}
+        AND "type" = CAST(${parsed.data.type} AS "EntryType")
+        AND BTRIM("note") <> ''
+    ), ranked AS (
+      SELECT
+        "normalizedDescription",
+        (ARRAY_AGG("description" ORDER BY "createdAt" DESC, "description" ASC))[1]
+          AS "description",
+        COUNT(*) AS "usageCount",
+        MAX("createdAt") AS "lastUsedAt"
+      FROM normalized
+      WHERE (${normalizedQuery} = '' OR STRPOS("normalizedDescription", ${normalizedQuery}) > 0)
+        AND "normalizedDescription" <> ${normalizedQuery}
+      GROUP BY "normalizedDescription"
+    )
+    SELECT "description"
+    FROM ranked
+    ORDER BY "usageCount" DESC, "lastUsedAt" DESC, "normalizedDescription" ASC
+    LIMIT 2
   `);
 
-  const suggestions = rankDescriptionSuggestions(
-    groups.map((group) => ({
-      type: parsed.data.type as RecordEntryType,
-      description: group.note,
-      usageCount: Number(group.usageCount),
-      lastUsedAt: group.lastUsedAt ?? 0,
-    })),
-    parsed.data.type,
-    query,
-    2,
-  );
-
-  return { ok: true, suggestions };
+  return { ok: true, suggestions: suggestions.map((row) => row.description) };
 }
 
 export async function deleteRecordAction(id: unknown): Promise<ActionResult> {
