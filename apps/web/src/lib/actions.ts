@@ -3,9 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { DEFAULT_CATEGORIES, parseExpenseCsv, type DateOrder } from "@coincache/shared";
+import {
+  DEFAULT_CATEGORIES,
+  DESCRIPTION_MAX_LENGTH,
+  normalizeDescription,
+  parseExpenseCsv,
+  type DateOrder,
+} from "@coincache/shared";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./db";
+import { findDescriptionSuggestions } from "./description-suggestions";
 import {
   checkRateLimit,
   clientIp,
@@ -17,7 +24,8 @@ import {
   verifyPassword,
 } from "./auth";
 
-export type ActionResult = { ok: boolean; error?: string };
+export type ActionErrorField = "description";
+export type ActionResult = { ok: boolean; error?: string; field?: ActionErrorField };
 
 const emailSchema = z.string().trim().toLowerCase().email().max(200);
 const passwordSchema = z.string().min(8, "Password must be at least 8 characters").max(200);
@@ -28,8 +36,8 @@ const amountSchema = z.number().int().positive().max(9_000_000_000_000);
 const colorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const iconSchema = z.string().min(1).max(8);
 
-function fail(error: string): ActionResult {
-  return { ok: false, error };
+function fail(error: string, field?: ActionErrorField): ActionResult {
+  return { ok: false, error, ...(field ? { field } : {}) };
 }
 
 /** Seed a brand-new user's private space: Cash account + default categories + settings. */
@@ -177,7 +185,14 @@ const recordSchema = z.object({
   type: z.enum(["EXPENSE", "INCOME"]),
   amountMinor: amountSchema,
   date: dateSchema,
-  note: z.string().max(500).default(""),
+  note: z
+    .string()
+    .trim()
+    .min(1, "Enter a description.")
+    .max(
+      DESCRIPTION_MAX_LENGTH,
+      `Description must be ${DESCRIPTION_MAX_LENGTH} characters or fewer.`,
+    ),
   accountId: idSchema,
   categoryId: idSchema,
 });
@@ -185,7 +200,12 @@ const recordSchema = z.object({
 export async function saveRecordAction(input: unknown): Promise<ActionResult> {
   const user = await requireUser();
   const parsed = recordSchema.safeParse(input);
-  if (!parsed.success) return fail("Invalid record data.");
+  if (!parsed.success) {
+    const descriptionIssue = parsed.error.issues.find((issue) => issue.path[0] === "note");
+    return descriptionIssue
+      ? fail(descriptionIssue.message, "description")
+      : fail("Invalid record data.");
+  }
   const { id, type, amountMinor, date, note, accountId, categoryId } = parsed.data;
 
   // Ownership checks: the category, account and (when editing) the
@@ -214,6 +234,35 @@ export async function saveRecordAction(input: unknown): Promise<ActionResult> {
   }
   revalidatePath("/");
   return { ok: true };
+}
+
+const descriptionSuggestionSchema = z.object({
+  type: z.enum(["EXPENSE", "INCOME"]),
+  query: z.string().max(DESCRIPTION_MAX_LENGTH),
+});
+
+export type DescriptionSuggestionResult =
+  | { ok: true; suggestions: string[] }
+  | { ok: false; suggestions: []; error: string };
+
+export async function getDescriptionSuggestionsAction(
+  input: unknown,
+): Promise<DescriptionSuggestionResult> {
+  const user = await requireUser();
+  const parsed = descriptionSuggestionSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, suggestions: [], error: "Invalid suggestion request." };
+  }
+
+  const query = normalizeDescription(parsed.data.query);
+  const normalizedQuery = query.toLowerCase();
+  const suggestions = await findDescriptionSuggestions(prisma, {
+    userId: user.id,
+    type: parsed.data.type,
+    normalizedQuery,
+  });
+
+  return { ok: true, suggestions };
 }
 
 export async function deleteRecordAction(id: unknown): Promise<ActionResult> {
