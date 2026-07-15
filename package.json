@@ -11,6 +11,10 @@
     "build": "npm run build -w apps/web",
     "start": "npm run start -w apps/web",
     "test": "npm test -w packages/shared",
-    "test:db": "npm run test:db -w apps/web"
+    "test:db": "npm run test:db -w apps/web",
+    "test:e2e": "bash scripts/test-e2e.sh"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1"
   }
 }
