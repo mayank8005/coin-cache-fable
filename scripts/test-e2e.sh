@@ -1,26 +1,64 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-container="cc-e2e-db"
 run_id="$(date +%s)_$$"
+container="cc-e2e-db-${run_id}"
 database_name="coincache_e2e_${run_id}"
-database_url="postgresql://coincache:test@127.0.0.1:5433/${database_name}"
-app_port="$(node scripts/find-free-port.mjs)"
-echo "Using E2E database ${database_name} and app port ${app_port}."
+lock_dir="${TMPDIR:-/tmp}/coincache-e2e.lock"
+lock_acquired=0
 
 cleanup() {
   docker rm -f "$container" >/dev/null 2>&1 || true
+  if [[ "$lock_acquired" == "1" ]]; then
+    rm -f "$lock_dir/pid"
+    rmdir "$lock_dir" >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT INT TERM
 
-cleanup
+acquire_lock() {
+  if mkdir "$lock_dir" 2>/dev/null; then
+    return 0
+  fi
+
+  local owner_pid=""
+  if [[ -r "$lock_dir/pid" ]]; then
+    IFS= read -r owner_pid < "$lock_dir/pid" || true
+  fi
+  if [[ "$owner_pid" =~ ^[0-9]+$ ]] && ! kill -0 "$owner_pid" 2>/dev/null; then
+    rm -f "$lock_dir/pid"
+    rmdir "$lock_dir" >/dev/null 2>&1 || true
+    mkdir "$lock_dir" 2>/dev/null && return 0
+  fi
+
+  return 1
+}
+
+if ! acquire_lock; then
+  echo "Another CoinCache E2E run is already active. Wait for it to finish before retrying." >&2
+  exit 1
+fi
+lock_acquired=1
+printf '%s\n' "$$" > "$lock_dir/pid"
+
+app_port="$(node scripts/find-free-port.mjs)"
+
 docker run --detach --name "$container" \
   --env POSTGRES_USER=coincache \
   --env POSTGRES_PASSWORD=test \
   --env POSTGRES_DB="$database_name" \
-  --publish 127.0.0.1:5433:5432 \
+  --publish 127.0.0.1::5432 \
   --tmpfs /var/lib/postgresql/data \
   postgres:16-alpine >/dev/null
+
+database_binding="$(docker port "$container" 5432/tcp)"
+database_port="${database_binding##*:}"
+if [[ ! "$database_port" =~ ^[0-9]+$ ]]; then
+  echo "Unable to determine the throwaway PostgreSQL host port." >&2
+  exit 1
+fi
+database_url="postgresql://coincache:test@127.0.0.1:${database_port}/${database_name}"
+echo "Using E2E container ${container}, database port ${database_port}, and app port ${app_port}."
 
 ready=0
 for _ in {1..30}; do
