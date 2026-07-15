@@ -7,3 +7,5 @@ backups/
 *.csv
 .claude/settings.local.json
 *.tsbuildinfo
+playwright-report/
+test-results/
