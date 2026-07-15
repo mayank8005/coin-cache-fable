@@ -1,9 +1,11 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { requireSafeE2eDatabaseUrl } from "./database-safety";
 
 export const TEST_EMAIL = "dashboard@example.test";
 export const TEST_PASSWORD = "test-password";
 
+process.env.DATABASE_URL = requireSafeE2eDatabaseUrl();
 const prisma = new PrismaClient();
 
 export type SeedDates = {
@@ -36,8 +38,14 @@ function dbDate(iso: string): Date {
 }
 
 export async function seedDashboard(): Promise<SeedDates> {
-  await prisma.loginAttempt.deleteMany();
-  await prisma.user.deleteMany();
+  const unexpectedUsers = await prisma.user.count({ where: { email: { not: TEST_EMAIL } } });
+  if (unexpectedUsers > 0) {
+    throw new Error("Refusing to reset E2E fixtures because the database contains non-test users.");
+  }
+  await prisma.$transaction([
+    prisma.loginAttempt.deleteMany(),
+    prisma.user.deleteMany({ where: { email: TEST_EMAIL } }),
+  ]);
 
   const user = await prisma.user.create({
     data: {

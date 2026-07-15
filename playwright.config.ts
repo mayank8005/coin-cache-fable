@@ -1,7 +1,13 @@
 import { defineConfig } from "@playwright/test";
+import {
+  requireE2eAppPort,
+  requireSafeE2eDatabaseUrl,
+} from "./apps/web/e2e/database-safety";
 
-const databaseUrl =
-  process.env.DATABASE_URL ?? "postgresql://coincache:test@127.0.0.1:5433/coincache";
+const databaseUrl = requireSafeE2eDatabaseUrl();
+const appPort = requireE2eAppPort();
+const baseURL = `http://127.0.0.1:${appPort}`;
+process.env.DATABASE_URL = databaseUrl;
 
 export default defineConfig({
   testDir: "./apps/web/e2e",
@@ -11,15 +17,15 @@ export default defineConfig({
   expect: { timeout: 8_000 },
   reporter: [["list"]],
   use: {
-    baseURL: "http://127.0.0.1:3100",
+    baseURL,
     viewport: { width: 430, height: 932 },
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: "npm run dev -w apps/web -- --hostname 127.0.0.1 --port 3100",
+    command: `npm run dev -w apps/web -- --hostname 127.0.0.1 --port ${appPort}`,
     env: { DATABASE_URL: databaseUrl, TZ: "Asia/Kolkata" },
-    url: "http://127.0.0.1:3100/login",
+    url: `${baseURL}/login`,
     reuseExistingServer: false,
     timeout: 120_000,
   },
