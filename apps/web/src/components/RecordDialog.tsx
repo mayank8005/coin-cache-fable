@@ -198,10 +198,12 @@ export default function RecordDialog(props: {
         categoryId,
       });
       if (res.ok) {
-        try {
-          localStorage.setItem("cc.lastAccountId", accountId);
-        } catch {
-          // ignore storage failures
+        if (!editEntry) {
+          try {
+            localStorage.setItem("cc.lastAccountId", accountId);
+          } catch {
+            // ignore storage failures
+          }
         }
         props.onClose();
         router.refresh();

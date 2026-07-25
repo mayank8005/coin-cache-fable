@@ -169,6 +169,16 @@ test("remembers last used account", async ({ page }) => {
 
   await page.getByRole("button", { name: "Add expense" }).click();
   await expect(page.getByLabel("Account", { exact: true })).toHaveValue(bankId ?? "");
+  await page.getByRole("button", { name: "Close" }).click();
+
+  await group(page, dateLabel(dates.today)).click();
+  await page.getByText("Lunch groceries").locator("xpath=ancestor::button").click();
+  await page.getByRole("button", { name: "Choose category" }).click();
+  await page.locator("button:has(span.truncate)").filter({ hasText: "Food" }).click();
+  await expect(page.getByLabel("Account", { exact: true })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Add expense" }).click();
+  await expect(page.getByLabel("Account", { exact: true })).toHaveValue(bankId ?? "");
 });
 
 test("ignores stale stored account", async ({ page }) => {
