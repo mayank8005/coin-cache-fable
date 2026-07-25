@@ -157,18 +157,18 @@ test("adding an expense refreshes the collapsed summary and percentages", async 
 
 test("remembers last used account", async ({ page }) => {
   await page.getByRole("button", { name: "Add expense" }).click();
-  const account = page.getByLabel("Account");
+  const account = page.getByLabel("Account", { exact: true });
   const bankId = await account.locator("option", { hasText: "Bank" }).getAttribute("value");
   await account.selectOption(bankId ?? "");
   await page.getByRole("button", { name: "5", exact: true }).click();
   await page.getByRole("button", { name: "0", exact: true }).click();
-  await page.getByLabel("Description").fill("Bank snack");
+  await page.getByRole("textbox", { name: "Description" }).fill("Bank snack");
   await page.getByRole("button", { name: "Choose category" }).click();
   await page.locator("button:has(span.truncate)").filter({ hasText: "Food" }).click();
-  await expect(page.getByLabel("Account")).toHaveCount(0);
+  await expect(page.getByLabel("Account", { exact: true })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Add expense" }).click();
-  await expect(page.getByLabel("Account")).toHaveValue(bankId ?? "");
+  await expect(page.getByLabel("Account", { exact: true })).toHaveValue(bankId ?? "");
 });
 
 test("ignores stale stored account", async ({ page }) => {
@@ -177,5 +177,5 @@ test("ignores stale stored account", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Records" })).toBeVisible();
 
   await page.getByRole("button", { name: "Add expense" }).click();
-  await expect(page.getByLabel("Account").locator("option:checked")).toContainText("Cash");
+  await expect(page.getByLabel("Account", { exact: true }).locator("option:checked")).toContainText("Cash");
 });
