@@ -37,15 +37,24 @@ export default function Dashboard(props: {
     { mode: "new" } | { mode: "edit"; entry: Extract<Entry, { kind: "transfer" }> } | null
   >(null);
   const [recordsBy, setRecordsBy] = useState<"date" | "category">("date");
+  const [lastAccountId, setLastAccountId] = useState<string | null>(null);
   useEffect(() => {
     if (localStorage.getItem("cc.recordsBy") === "category") setRecordsBy("category");
+    setLastAccountId(localStorage.getItem("cc.lastAccountId"));
   }, []);
+  function addRecord(type: "EXPENSE" | "INCOME") {
+    setLastAccountId(localStorage.getItem("cc.lastAccountId"));
+    setRecordDialog({ mode: "new", type });
+  }
   function switchRecordsBy(by: "date" | "category") {
     localStorage.setItem("cc.recordsBy", by);
     setRecordsBy(by);
   }
 
   const activeAccounts = useMemo(() => props.accounts.filter((a) => !a.archived), [props.accounts]);
+  const rememberedAccountId = activeAccounts.some((a) => a.id === lastAccountId)
+    ? lastAccountId
+    : null;
 
   function nav(next: { period?: Period; offset?: number; account?: string | null }) {
     const q = new URLSearchParams();
@@ -212,7 +221,7 @@ export default function Dashboard(props: {
       {/* FABs */}
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 mx-auto flex max-w-lg items-end justify-between px-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
         <button
-          onClick={() => setRecordDialog({ mode: "new", type: "EXPENSE" })}
+          onClick={() => addRecord("EXPENSE")}
           className="fab pointer-events-auto bg-expense"
           aria-label="Add expense"
         >
@@ -221,7 +230,7 @@ export default function Dashboard(props: {
           </svg>
         </button>
         <button
-          onClick={() => setRecordDialog({ mode: "new", type: "INCOME" })}
+          onClick={() => addRecord("INCOME")}
           className="fab pointer-events-auto bg-income"
           aria-label="Add income"
         >
@@ -241,7 +250,9 @@ export default function Dashboard(props: {
           currency={currency}
           locale={locale}
           todayIso={props.todayIso}
-          defaultAccountId={props.accountId ?? activeAccounts[0]?.id ?? ""}
+          defaultAccountId={
+            props.accountId ?? rememberedAccountId ?? activeAccounts[0]?.id ?? ""
+          }
           onClose={() => setRecordDialog(null)}
         />
       )}
