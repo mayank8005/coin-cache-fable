@@ -198,6 +198,13 @@ export default function RecordDialog(props: {
         categoryId,
       });
       if (res.ok) {
+        if (!editEntry) {
+          try {
+            localStorage.setItem("cc.lastAccountId", accountId);
+          } catch {
+            // ignore storage failures
+          }
+        }
         props.onClose();
         router.refresh();
       } else {
@@ -299,6 +306,7 @@ export default function RecordDialog(props: {
               <select
                 value={accountId}
                 onChange={(e) => setAccountId(e.target.value)}
+                aria-label="Account"
                 className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm"
               >
                 {props.accounts.map((a) => (

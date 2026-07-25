@@ -36,17 +36,15 @@ export default function Dashboard(props: {
   const [transferDialog, setTransferDialog] = useState<
     { mode: "new" } | { mode: "edit"; entry: Extract<Entry, { kind: "transfer" }> } | null
   >(null);
-  const [catsOpen, setCatsOpen] = useState(true);
   const [recordsBy, setRecordsBy] = useState<"date" | "category">("date");
+  const [lastAccountId, setLastAccountId] = useState<string | null>(null);
   useEffect(() => {
-    if (localStorage.getItem("cc.catsOpen") === "0") setCatsOpen(false);
     if (localStorage.getItem("cc.recordsBy") === "category") setRecordsBy("category");
+    setLastAccountId(localStorage.getItem("cc.lastAccountId"));
   }, []);
-  function toggleCats() {
-    setCatsOpen((open) => {
-      localStorage.setItem("cc.catsOpen", open ? "0" : "1");
-      return !open;
-    });
+  function addRecord(type: "EXPENSE" | "INCOME") {
+    setLastAccountId(localStorage.getItem("cc.lastAccountId"));
+    setRecordDialog({ mode: "new", type });
   }
   function switchRecordsBy(by: "date" | "category") {
     localStorage.setItem("cc.recordsBy", by);
@@ -54,6 +52,9 @@ export default function Dashboard(props: {
   }
 
   const activeAccounts = useMemo(() => props.accounts.filter((a) => !a.archived), [props.accounts]);
+  const rememberedAccountId = activeAccounts.some((a) => a.id === lastAccountId)
+    ? lastAccountId
+    : null;
 
   function nav(next: { period?: Period; offset?: number; account?: string | null }) {
     const q = new URLSearchParams();
@@ -182,61 +183,6 @@ export default function Dashboard(props: {
           </div>
         </div>
 
-        {/* Category breakdown */}
-        {data.byCategory.length > 0 && (
-          <button
-            onClick={toggleCats}
-            className="mt-2 flex h-11 w-full items-center justify-between px-1"
-            aria-expanded={catsOpen}
-          >
-            <span className="text-sm font-semibold uppercase tracking-wide text-gray-400">
-              Categories{catsOpen ? "" : ` · ${data.byCategory.length}`}
-            </span>
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-200/70 text-gray-500">
-              <svg
-                viewBox="0 0 24 24"
-                className={`h-4 w-4 transition-transform ${catsOpen ? "" : "-rotate-90"}`}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
-            </span>
-          </button>
-        )}
-        {data.byCategory.length > 0 && catsOpen && (
-          <ul className="space-y-1">
-            {data.byCategory.map((s) => (
-              <li key={s.categoryId} className="flex items-center gap-3 rounded-xl bg-white px-3 py-2 shadow-sm">
-                <span
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg leading-none"
-                  style={{ backgroundColor: s.color + "26" }}
-                >
-                  {s.icon}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="truncate text-sm font-medium">{s.name}</span>
-                    <span className="text-sm font-semibold">{fmt(s.amountMinor)}</span>
-                  </div>
-                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100">
-                    <div
-                      className="h-full rounded-full"
-                      style={{ width: `${Math.max(2, s.share * 100)}%`, backgroundColor: s.color }}
-                    />
-                  </div>
-                </div>
-                <span className="w-10 shrink-0 text-right text-xs text-gray-400">
-                  {(s.share * 100).toFixed(0)}%
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
       </section>
 
       {/* Records */}
@@ -248,6 +194,7 @@ export default function Dashboard(props: {
               <button
                 key={by}
                 onClick={() => switchRecordsBy(by)}
+                aria-pressed={recordsBy === by}
                 className={`rounded-md px-3 py-1.5 ${
                   recordsBy === by ? "bg-white text-gray-800 shadow-sm" : "text-gray-500"
                 }`}
@@ -258,6 +205,7 @@ export default function Dashboard(props: {
           </div>
         </div>
         <EntryList
+          key={`${recordsBy}:${props.period}:${props.offset}:${props.accountId ?? "all"}`}
           entries={data.entries}
           currency={currency}
           locale={locale}
@@ -273,7 +221,7 @@ export default function Dashboard(props: {
       {/* FABs */}
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 mx-auto flex max-w-lg items-end justify-between px-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
         <button
-          onClick={() => setRecordDialog({ mode: "new", type: "EXPENSE" })}
+          onClick={() => addRecord("EXPENSE")}
           className="fab pointer-events-auto bg-expense"
           aria-label="Add expense"
         >
@@ -282,7 +230,7 @@ export default function Dashboard(props: {
           </svg>
         </button>
         <button
-          onClick={() => setRecordDialog({ mode: "new", type: "INCOME" })}
+          onClick={() => addRecord("INCOME")}
           className="fab pointer-events-auto bg-income"
           aria-label="Add income"
         >
@@ -302,7 +250,9 @@ export default function Dashboard(props: {
           currency={currency}
           locale={locale}
           todayIso={props.todayIso}
-          defaultAccountId={props.accountId ?? activeAccounts[0]?.id ?? ""}
+          defaultAccountId={
+            props.accountId ?? rememberedAccountId ?? activeAccounts[0]?.id ?? ""
+          }
           onClose={() => setRecordDialog(null)}
         />
       )}
