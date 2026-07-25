@@ -181,6 +181,57 @@ test("remembers last used account", async ({ page }) => {
   await expect(page.getByLabel("Account", { exact: true })).toHaveValue(bankId ?? "");
 });
 
+test("saves edited amount and description via header save without touching category", async ({ page }) => {
+  await group(page, dateLabel(dates.today)).click();
+  await page.getByText("Lunch groceries").locator("xpath=ancestor::button").click();
+
+  const backspace = page.getByRole("button", { name: "⌫" });
+  await backspace.click();
+  await backspace.click();
+  await backspace.click();
+  await page.getByRole("button", { name: "2", exact: true }).click();
+  await page.getByRole("button", { name: "5", exact: true }).click();
+  await page.getByRole("textbox", { name: "Description" }).fill("Brunch groceries");
+  await page.getByRole("button", { name: "Save record" }).click();
+
+  await expect(page.getByRole("button", { name: "Save record" })).toHaveCount(0);
+  const row = page.getByText("Cash · Brunch groceries").locator("xpath=ancestor::button");
+  await expect(row).toContainText("Food");
+  await expect(row).toContainText("₹25");
+  await expect(page.getByText("Cash · Lunch groceries")).toHaveCount(0);
+  await expect(group(page, dateLabel(dates.today))).toContainText("₹25");
+});
+
+test("hides quick-save when the entry type is changed", async ({ page }) => {
+  await group(page, dateLabel(dates.today)).click();
+  await page.getByText("Lunch groceries").locator("xpath=ancestor::button").click();
+  const save = page.getByRole("button", { name: "Save record" });
+  const remove = page.getByRole("button", { name: "Delete record" });
+  await expect(save).toBeVisible();
+
+  await page.getByRole("button", { name: "Income", exact: true }).click();
+  await expect(save).toHaveCount(0);
+  await expect(remove).toBeVisible();
+
+  await page.getByRole("button", { name: "Expense", exact: true }).click();
+  await expect(save).toBeVisible();
+});
+
+test("blocks header save when description is empty", async ({ page }) => {
+  await group(page, dateLabel(dates.today)).click();
+  await page.getByText("Lunch groceries").locator("xpath=ancestor::button").click();
+  await page.getByRole("textbox", { name: "Description" }).fill("");
+  await page.getByRole("button", { name: "Save record" }).click();
+
+  await expect(page.locator("#record-description-error")).toHaveText("Enter a description.");
+  await expect(page.locator("#record-description")).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByRole("button", { name: "Save record" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Close" }).click();
+  await expect(page.getByRole("button", { name: "Save record" })).toHaveCount(0);
+  await expect(page.getByText("Cash · Lunch groceries")).toBeVisible();
+});
+
 test("ignores stale stored account", async ({ page }) => {
   await page.evaluate(() => localStorage.setItem("cc.lastAccountId", "nonexistent"));
   await page.reload();
