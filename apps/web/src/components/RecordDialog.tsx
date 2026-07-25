@@ -260,14 +260,26 @@ export default function RecordDialog(props: {
             </button>
           </div>
           {editEntry ? (
-            <button
-              onClick={remove}
-              className="-mr-2 flex h-11 w-11 items-center justify-center rounded-full text-xl active:bg-black/15"
-              aria-label="Delete record"
-              disabled={pending}
-            >
-              🗑️
-            </button>
+            <div className="flex items-center">
+              {type === editEntry.type && (
+                <button
+                  onClick={() => save(editEntry.categoryId)}
+                  className="flex h-11 w-11 items-center justify-center rounded-full text-xl active:bg-black/15"
+                  aria-label="Save record"
+                  disabled={pending}
+                >
+                  ✓
+                </button>
+              )}
+              <button
+                onClick={remove}
+                className="-mr-2 flex h-11 w-11 items-center justify-center rounded-full text-xl active:bg-black/15"
+                aria-label="Delete record"
+                disabled={pending}
+              >
+                🗑️
+              </button>
+            </div>
           ) : (
             <span className="w-9" />
           )}
