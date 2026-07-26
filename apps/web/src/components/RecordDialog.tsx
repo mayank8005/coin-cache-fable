@@ -234,7 +234,7 @@ export default function RecordDialog(props: {
       : null;
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/45 sm:items-center" onClick={props.onClose}>
+    <div className="fixed inset-0 z-40 flex items-end justify-center glass-scrim sm:items-center" onClick={props.onClose}>
       <div
         className="pb-safe w-full max-w-lg rounded-t-2xl bg-surface shadow-2xl sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}

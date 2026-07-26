@@ -392,7 +392,7 @@ export default function SearchView(
 
   return (
     <div className="mx-auto min-h-dvh max-w-lg pb-12">
-      <header className="pt-safe sticky top-0 z-20 bg-brand shadow-md">
+      <header className="pt-safe sticky top-0 z-20 glass-header shadow-md">
         <div className="flex items-center gap-2 px-4 py-3">
           <Link
             href="/"

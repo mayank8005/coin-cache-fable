@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Dashboard as DashboardData, Entry, PlainAccount, PlainCategory } from "@/lib/data";
@@ -10,6 +10,60 @@ import Donut from "./Donut";
 import EntryList from "./EntryList";
 import RecordDialog from "./RecordDialog";
 import TransferDialog from "./TransferDialog";
+
+/* Horizontal swipe (touch only): axis-locked, never preventDefault so vertical
+ * scrolling stays native. Ignores touches starting in the iOS edge-swipe zone. */
+function useHorizontalSwipe(enabled: boolean, onSwipe: (dir: 1 | -1) => void) {
+  const start = useRef<{ x: number; y: number; t: number; axis: "x" | "y" | null } | null>(null);
+  /* -Infinity, not 0: timeStamp counts from document load, so 0 would swallow
+   * every real click in the first 400ms after a full page load. */
+  const swipedAt = useRef(-Infinity);
+  return {
+    /* Swallow the ghost click some browsers synthesize after a fast drag, before
+     * it reaches a row/toggle inside. React synthetic events expose the native
+     * timeStamp, so touch and mouse events share one clock. A new touchstart
+     * re-arms clicks, so only the synthesized click — which has no touchstart of
+     * its own — is swallowed, never a genuine tap made inside the window. */
+    onClickCapture(e: React.MouseEvent) {
+      if (e.timeStamp - swipedAt.current < 400) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    },
+    onTouchStart(e: React.TouchEvent) {
+      swipedAt.current = -Infinity;
+      start.current = null;
+      if (!enabled || e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      if (touch.clientX < 24 || touch.clientX > window.innerWidth - 24) return;
+      start.current = { x: touch.clientX, y: touch.clientY, t: e.timeStamp, axis: null };
+    },
+    onTouchMove(e: React.TouchEvent) {
+      const s = start.current;
+      if (!s || s.axis) return;
+      const touch = e.touches[0];
+      if (!touch) return;
+      const dx = touch.clientX - s.x;
+      const dy = touch.clientY - s.y;
+      if (Math.abs(dx) <= 10 && Math.abs(dy) <= 10) return;
+      if (Math.abs(dy) > Math.abs(dx)) start.current = null;
+      else s.axis = "x";
+    },
+    onTouchEnd(e: React.TouchEvent) {
+      const s = start.current;
+      start.current = null;
+      if (!s || s.axis !== "x") return;
+      const touch = e.changedTouches[0];
+      if (!touch) return;
+      const dx = touch.clientX - s.x;
+      const elapsed = e.timeStamp - s.t;
+      if (Math.abs(dx) > 50 || (Math.abs(dx) > 30 && elapsed < 250)) {
+        swipedAt.current = e.timeStamp;
+        onSwipe(dx < 0 ? 1 : -1);
+      }
+    },
+  };
+}
 
 export default function Dashboard(props: {
   userName: string;
@@ -25,6 +79,7 @@ export default function Dashboard(props: {
   data: DashboardData;
 }) {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const { data, currency, locale } = props;
   const fmt = (m: number, sign = false) => formatMoney(m, currency, locale, { sign });
 
@@ -56,24 +111,45 @@ export default function Dashboard(props: {
     ? lastAccountId
     : null;
 
+  /* Props lag behind while a nav transition is pending, so rapid repeat-navigation
+   * would rebase off stale values. Track the whole pending navigation intent
+   * (period/offset/account) until it commits, and read it at event time — renders
+   * don't keep up with back-to-back inputs. */
+  const requestedNav = useRef<{ period: Period; offset: number; account: string | null } | null>(
+    null,
+  );
+  if (!isPending) requestedNav.current = null;
+
   function nav(next: { period?: Period; offset?: number; account?: string | null }) {
     const q = new URLSearchParams();
-    const period = next.period ?? props.period;
-    const offset = next.offset ?? props.offset;
-    const account = next.account === undefined ? props.accountId : next.account;
+    const base = requestedNav.current ?? {
+      period: props.period,
+      offset: props.offset,
+      account: props.accountId,
+    };
+    const period = next.period ?? base.period;
+    const offset = next.offset ?? base.offset;
+    const account = next.account === undefined ? base.account : next.account;
     if (period !== "month") q.set("period", period);
     if (offset !== 0) q.set("offset", String(offset));
     if (account) q.set("account", account);
     const s = q.toString();
-    router.push(s ? `/?${s}` : "/");
+    requestedNav.current = { period, offset, account };
+    startTransition(() => router.push(s ? `/?${s}` : "/"));
   }
+
+  function stepOffset(dir: 1 | -1) {
+    nav({ offset: (requestedNav.current ?? props).offset + dir });
+  }
+
+  const swipe = useHorizontalSwipe(props.period !== "all", stepOffset);
 
   const netMinor = data.incomeMinor - data.expenseMinor;
 
   return (
     <div className="mx-auto min-h-dvh max-w-lg pb-28">
       {/* Header */}
-      <header className="pt-safe sticky top-0 z-20 bg-brand text-white shadow-md">
+      <header className="pt-safe sticky top-0 z-20 glass-header text-white shadow-md">
         <div className="flex items-center gap-2 px-4 py-3">
           <span className="text-xl">🪙</span>
           <h1 className="text-lg font-bold tracking-wide">CoinCache</h1>
@@ -141,7 +217,7 @@ export default function Dashboard(props: {
         {props.period !== "all" && (
           <div className="mt-2 flex items-center justify-between">
             <button
-              onClick={() => nav({ offset: props.offset - 1 })}
+              onClick={() => stepOffset(-1)}
               className="flex h-11 w-11 items-center justify-center rounded-full text-2xl text-gray-500 active:bg-gray-200"
               aria-label="Previous period"
             >
@@ -149,7 +225,7 @@ export default function Dashboard(props: {
             </button>
             <span className="text-sm font-semibold text-gray-700">{data.rangeLabel}</span>
             <button
-              onClick={() => nav({ offset: props.offset + 1 })}
+              onClick={() => stepOffset(1)}
               className="flex h-11 w-11 items-center justify-center rounded-full text-2xl text-gray-500 active:bg-gray-200"
               aria-label="Next period"
             >
@@ -159,64 +235,66 @@ export default function Dashboard(props: {
         )}
       </nav>
 
-      {/* Donut + summary */}
-      <section className="px-4 pt-2">
-        <Donut
-          slices={data.byCategory}
-          centerTop="Expenses"
-          centerBottom={fmt(data.expenseMinor)}
-        />
-        <div className="mt-1 grid grid-cols-3 gap-2 text-center">
-          <div className="rounded-xl bg-white p-2 shadow-sm">
-            <div className="text-[11px] uppercase tracking-wide text-gray-400">Income</div>
-            <div className="text-sm font-bold text-income">{fmt(data.incomeMinor)}</div>
-          </div>
-          <div className="rounded-xl bg-white p-2 shadow-sm">
-            <div className="text-[11px] uppercase tracking-wide text-gray-400">Expenses</div>
-            <div className="text-sm font-bold text-expense">{fmt(data.expenseMinor)}</div>
-          </div>
-          <div className="rounded-xl bg-white p-2 shadow-sm">
-            <div className="text-[11px] uppercase tracking-wide text-gray-400">Net</div>
-            <div className={`text-sm font-bold ${netMinor < 0 ? "text-expense" : "text-income"}`}>
-              {fmt(netMinor)}
+      <div {...swipe} className={`transition-opacity ${isPending ? "opacity-60" : ""}`}>
+        {/* Donut + summary */}
+        <section className="px-4 pt-2">
+          <Donut
+            slices={data.byCategory}
+            centerTop="Expenses"
+            centerBottom={fmt(data.expenseMinor)}
+          />
+          <div className="mt-1 grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-xl bg-white p-2 shadow-sm">
+              <div className="text-[11px] uppercase tracking-wide text-gray-400">Income</div>
+              <div className="text-sm font-bold text-income">{fmt(data.incomeMinor)}</div>
+            </div>
+            <div className="rounded-xl bg-white p-2 shadow-sm">
+              <div className="text-[11px] uppercase tracking-wide text-gray-400">Expenses</div>
+              <div className="text-sm font-bold text-expense">{fmt(data.expenseMinor)}</div>
+            </div>
+            <div className="rounded-xl bg-white p-2 shadow-sm">
+              <div className="text-[11px] uppercase tracking-wide text-gray-400">Net</div>
+              <div className={`text-sm font-bold ${netMinor < 0 ? "text-expense" : "text-income"}`}>
+                {fmt(netMinor)}
+              </div>
             </div>
           </div>
-        </div>
 
-      </section>
+        </section>
 
-      {/* Records */}
-      <section className="px-4 pt-4">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">Records</h2>
-          <div className="flex rounded-lg bg-gray-200/70 p-0.5 text-xs font-medium">
-            {(["date", "category"] as const).map((by) => (
-              <button
-                key={by}
-                onClick={() => switchRecordsBy(by)}
-                aria-pressed={recordsBy === by}
-                className={`rounded-md px-3 py-1.5 ${
-                  recordsBy === by ? "bg-white text-gray-800 shadow-sm" : "text-gray-500"
-                }`}
-              >
-                {by === "date" ? "By date" : "By category"}
-              </button>
-            ))}
+        {/* Records */}
+        <section className="px-4 pt-4">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">Records</h2>
+            <div className="flex rounded-lg bg-gray-200/70 p-0.5 text-xs font-medium">
+              {(["date", "category"] as const).map((by) => (
+                <button
+                  key={by}
+                  onClick={() => switchRecordsBy(by)}
+                  aria-pressed={recordsBy === by}
+                  className={`rounded-md px-3 py-1.5 ${
+                    recordsBy === by ? "bg-white text-gray-800 shadow-sm" : "text-gray-500"
+                  }`}
+                >
+                  {by === "date" ? "By date" : "By category"}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-        <EntryList
-          key={`${recordsBy}:${props.period}:${props.offset}:${props.accountId ?? "all"}`}
-          entries={data.entries}
-          currency={currency}
-          locale={locale}
-          groupBy={recordsBy}
-          onEdit={(entry) =>
-            entry.kind === "record"
-              ? setRecordDialog({ mode: "edit", entry })
-              : setTransferDialog({ mode: "edit", entry })
-          }
-        />
-      </section>
+          <EntryList
+            key={`${recordsBy}:${props.period}:${props.offset}:${props.accountId ?? "all"}`}
+            entries={data.entries}
+            currency={currency}
+            locale={locale}
+            groupBy={recordsBy}
+            onEdit={(entry) =>
+              entry.kind === "record"
+                ? setRecordDialog({ mode: "edit", entry })
+                : setTransferDialog({ mode: "edit", entry })
+            }
+          />
+        </section>
+      </div>
 
       {/* FABs */}
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 mx-auto flex max-w-lg items-end justify-between px-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
