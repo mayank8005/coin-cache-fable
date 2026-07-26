@@ -46,7 +46,8 @@ function addDays(date: Date, n: number): Date {
   return c;
 }
 
-const MONTH_FMT = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" });
+/** "March 2025" — also used for month-grouped entry cards. */
+export const MONTH_FMT = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" });
 const DAY_FMT = new Intl.DateTimeFormat("en", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 const SHORT_FMT = new Intl.DateTimeFormat("en", { day: "numeric", month: "short", timeZone: "UTC" });
 

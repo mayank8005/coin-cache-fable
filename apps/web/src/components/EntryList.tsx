@@ -3,6 +3,7 @@
 import { useId, useState } from "react";
 import type { Entry } from "@/lib/data";
 import { formatMoney } from "@/lib/money";
+import { MONTH_FMT } from "@/lib/periods";
 
 const DATE_FMT = new Intl.DateTimeFormat("en", {
   weekday: "short",
@@ -43,12 +44,21 @@ export default function EntryList(props: {
   entries: Entry[];
   currency: string;
   locale: string;
-  groupBy?: "date" | "category";
+  groupBy?: "date" | "category" | "month";
+  /** Cards start open; the toggle state below is read as "flipped from default". */
+  defaultExpanded?: boolean;
+  showProgressBar?: boolean;
+  /** Rendered next to (never inside) the header button. */
+  headerAction?: (group: { key: string; label: string }) => React.ReactNode;
   emptyText?: string;
   onEdit: (entry: Entry) => void;
 }) {
   const { entries, currency, locale } = props;
   const groupBy = props.groupBy ?? "date";
+  const defaultExpanded = props.defaultExpanded ?? false;
+  const showProgressBar = props.showProgressBar !== false;
+  // Holds the keys toggled away from `defaultExpanded`, so groups that appear
+  // or disappear across filter round-trips keep the intended default.
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
   const idPrefix = useId().replaceAll(":", "");
 
@@ -70,15 +80,20 @@ export default function EntryList(props: {
   }
 
   let groups: Group[];
-  if (groupBy === "date") {
+  if (groupBy === "date" || groupBy === "month") {
+    // Entries arrive date-desc, so equal keys are always adjacent.
     groups = [];
     for (const e of entries) {
+      const key = groupBy === "month" ? e.date.slice(0, 7) : e.date;
       const last = groups[groups.length - 1];
-      if (last && last.key === e.date) addToGroup(last, e);
+      if (last && last.key === key) addToGroup(last, e);
       else {
         const group: Group = {
-          key: e.date,
-          label: DATE_FMT.format(new Date(e.date + "T00:00:00Z")),
+          key,
+          label:
+            groupBy === "month"
+              ? MONTH_FMT.format(new Date(e.date.slice(0, 7) + "-01T00:00:00Z"))
+              : DATE_FMT.format(new Date(e.date + "T00:00:00Z")),
           color: "#e53935",
           totalMinor: 0,
           expenseMinor: 0,
@@ -141,7 +156,8 @@ export default function EntryList(props: {
   return (
     <div className="space-y-3">
       {groups.map((g, index) => {
-        const open = openGroups.has(g.key);
+        const toggled = openGroups.has(g.key);
+        const open = defaultExpanded ? !toggled : toggled;
         const contentId = `${idPrefix}-group-${index}`;
         const expenseShare = totalExpenseMinor > 0 ? g.expenseMinor / totalExpenseMinor : 0;
         const percent = Math.round(expenseShare * 100);
@@ -152,8 +168,7 @@ export default function EntryList(props: {
               ? { label: "Income", amount: g.incomeMinor, className: "text-income" }
               : { label: "Transferred", amount: g.transferMinor, className: "text-gray-500" };
 
-        return (
-          <div key={g.key} className="overflow-hidden rounded-xl bg-white shadow-sm">
+        const headerButton = (
             <button
               type="button"
               onClick={() => toggleGroup(g.key)}
@@ -162,7 +177,9 @@ export default function EntryList(props: {
               aria-label={`${open ? "Collapse" : "Expand"} ${g.label}, ${g.items.length} ${
                 g.items.length === 1 ? "record" : "records"
               }`}
-              className="w-full px-3 py-2.5 text-left active:bg-gray-50"
+              className={`w-full px-3 py-2.5 text-left active:bg-gray-50${
+                props.headerAction ? " min-w-0 flex-1" : ""
+              }`}
             >
               <span className="flex items-center gap-2">
                 {g.icon && (
@@ -198,11 +215,11 @@ export default function EntryList(props: {
                 <span className={`text-sm font-semibold ${summary.className}`}>
                   {formatMoney(summary.amount, currency, locale)}
                 </span>
-                {g.expenseMinor > 0 && (
+                {showProgressBar && g.expenseMinor > 0 && (
                   <span className="ml-auto text-xs font-medium text-gray-400">{percent}%</span>
                 )}
               </span>
-              {g.expenseMinor > 0 && (
+              {showProgressBar && g.expenseMinor > 0 && (
                 <span
                   role="progressbar"
                   aria-label={`${g.label} share of expenses`}
@@ -219,6 +236,18 @@ export default function EntryList(props: {
                 </span>
               )}
             </button>
+        );
+
+        return (
+          <div key={g.key} className="overflow-hidden rounded-xl bg-white shadow-sm">
+            {props.headerAction ? (
+              <div className="flex items-center">
+                {headerButton}
+                {props.headerAction({ key: g.key, label: g.label })}
+              </div>
+            ) : (
+              headerButton
+            )}
             <ul
               id={contentId}
               hidden={!open}
@@ -245,7 +274,9 @@ export default function EntryList(props: {
                             <div className="truncate text-xs text-gray-400">
                               {groupBy === "category"
                                 ? `${SHORT_DATE_FMT.format(new Date(e.date + "T00:00:00Z"))} · ${e.accountName}`
-                                : `${e.accountName}${e.note ? ` · ${e.note}` : ""}`}
+                                : groupBy === "month"
+                                  ? `${SHORT_DATE_FMT.format(new Date(e.date + "T00:00:00Z"))} · ${e.accountName}${e.note ? ` · ${e.note}` : ""}`
+                                  : `${e.accountName}${e.note ? ` · ${e.note}` : ""}`}
                             </div>
                           </div>
                           <span
@@ -271,7 +302,7 @@ export default function EntryList(props: {
                               {e.fromAccountName} → {e.toAccountName}
                             </div>
                             <div className="truncate text-xs text-gray-400">
-                              {groupBy === "category"
+                              {groupBy === "category" || groupBy === "month"
                                 ? `${SHORT_DATE_FMT.format(new Date(e.date + "T00:00:00Z"))}${e.note ? ` · ${e.note}` : ""}`
                                 : `Transfer${e.note ? ` · ${e.note}` : ""}`}
                             </div>

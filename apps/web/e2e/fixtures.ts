@@ -13,6 +13,9 @@ export type SeedDates = {
   yesterday: string;
   incomeOnly: string;
   transferOnly: string;
+  /** Two months back — outside the dashboard's current month, used by search tests. */
+  oldRent: string;
+  oldMisc: string;
 };
 
 function todayInIndia(): string {
@@ -31,6 +34,14 @@ function shiftDate(iso: string, days: number): string {
   const date = new Date(`${iso}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+/** A fixed day in the month `months` away, so the pair never straddles a boundary. */
+function shiftMonthDay(iso: string, months: number, day: number): string {
+  const date = new Date(`${iso}T00:00:00Z`);
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, day))
+    .toISOString()
+    .slice(0, 10);
 }
 
 function dbDate(iso: string): Date {
@@ -108,6 +119,8 @@ export async function seedDashboard(): Promise<SeedDates> {
     yesterday: shiftDate(today, -1),
     incomeOnly: shiftDate(today, -2),
     transferOnly: shiftDate(today, -3),
+    oldRent: shiftMonthDay(today, -2, 12),
+    oldMisc: shiftMonthDay(today, -2, 14),
   };
   await prisma.record.createMany({
     data: [
@@ -155,6 +168,24 @@ export async function seedDashboard(): Promise<SeedDates> {
         note: "Referral bonus",
         accountId: cash.id,
         categoryId: bonus.id,
+      },
+      {
+        userId: user.id,
+        type: "EXPENSE",
+        amountMinor: 123_450,
+        date: dbDate(dates.oldRent),
+        note: "Old rent",
+        accountId: bank.id,
+        categoryId: food.id,
+      },
+      {
+        userId: user.id,
+        type: "EXPENSE",
+        amountMinor: 8_000,
+        date: dbDate(dates.oldMisc),
+        note: "Old market run",
+        accountId: cash.id,
+        categoryId: transport.id,
       },
     ],
   });

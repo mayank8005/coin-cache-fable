@@ -5,6 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Entry, PlainAccount, PlainCategory, SearchResult } from "@/lib/data";
 import { SEARCH_PAGE_SIZE, SEARCH_RANGES, type SearchRange } from "@/lib/periods";
+import {
+  SEARCH_BY_FIELDS,
+  isDefaultSearchBy,
+  serializeSearchBy,
+  type SearchByField,
+} from "@/lib/search";
 import { formatMoney } from "@/lib/money";
 import EntryList from "./EntryList";
 import RecordDialog from "./RecordDialog";
@@ -26,6 +32,7 @@ type Params = {
   max: string;
   categoryId: string | null;
   accountId: string | null;
+  searchBy: SearchByField[];
 };
 
 function Chip(props: { active: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -90,6 +97,7 @@ export default function SearchView(
       max: patch.max ?? maxText,
       categoryId: patch.categoryId === undefined ? props.categoryId : patch.categoryId,
       accountId: patch.accountId === undefined ? props.accountId : patch.accountId,
+      searchBy: patch.searchBy ?? props.searchBy,
     };
     const s = new URLSearchParams();
     if (next.q.trim()) s.set("q", next.q.trim());
@@ -103,6 +111,7 @@ export default function SearchView(
     if (next.max.trim()) s.set("max", next.max.trim());
     if (next.categoryId) s.set("category", next.categoryId);
     if (next.accountId) s.set("account", next.accountId);
+    if (!isDefaultSearchBy(next.searchBy)) s.set("by", serializeSearchBy(next.searchBy));
     if (patch.page && patch.page > 1) s.set("page", String(patch.page));
     const str = s.toString();
     // Jump back to the top when flipping pages; stay put while tweaking filters.
@@ -147,11 +156,21 @@ export default function SearchView(
       props.categoryId === null &&
       props.accountId === null &&
       props.min === "" &&
-      props.max === ""
+      props.max === "" &&
+      isDefaultSearchBy(props.searchBy)
     ) {
       resetting.current = false;
     }
   });
+
+  // At least one field must stay on, so un-toggling the last one is a no-op.
+  function toggleSearchBy(id: SearchByField) {
+    const active = props.searchBy.includes(id);
+    if (active && props.searchBy.length === 1) return;
+    update({
+      searchBy: active ? props.searchBy.filter((f) => f !== id) : [...props.searchBy, id],
+    });
+  }
 
   function clearAll() {
     setText("");
@@ -177,7 +196,8 @@ export default function SearchView(
     (props.type !== null ? 1 : 0) +
     (props.categoryId !== null ? 1 : 0) +
     (props.accountId !== null ? 1 : 0) +
-    (props.min.trim() !== "" || props.max.trim() !== "" ? 1 : 0);
+    (props.min.trim() !== "" || props.max.trim() !== "" ? 1 : 0) +
+    (isDefaultSearchBy(props.searchBy) ? 0 : 1);
   const hasFilter = advCount > 0 || props.range !== "month" || props.q.trim() !== "";
 
   return (
@@ -196,7 +216,7 @@ export default function SearchView(
               type="search"
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="Search notes, categories, accounts…"
+              placeholder="Search description or amount…"
               autoFocus
               className="h-11 w-full rounded-lg bg-white px-3 pr-10 text-sm text-gray-800 outline-none placeholder:text-gray-400 [&::-webkit-search-cancel-button]:hidden"
               aria-label="Search records"
@@ -280,6 +300,23 @@ export default function SearchView(
             </svg>
           </span>
         </button>
+
+        {advOpen && (
+        <div>
+          <RowLabel>Search by</RowLabel>
+          <div className="scrollbar-none flex gap-1.5 overflow-x-auto">
+            {SEARCH_BY_FIELDS.map((f) => (
+              <Chip
+                key={f.id}
+                active={props.searchBy.includes(f.id)}
+                onClick={() => toggleSearchBy(f.id)}
+              >
+                {f.label}
+              </Chip>
+            ))}
+          </div>
+        </div>
+        )}
 
         {advOpen && (
         <div>
@@ -399,6 +436,36 @@ export default function SearchView(
           entries={result.entries}
           currency={currency}
           locale={locale}
+          groupBy="month"
+          defaultExpanded
+          showProgressBar={false}
+          headerAction={({ key, label }) => {
+            // Month key is "YYYY-MM"; the home page takes a relative offset.
+            const [y, m] = key.split("-").map(Number);
+            const [ty, tm] = props.todayIso.split("-").map(Number);
+            const offset = (y - ty) * 12 + (m - tm);
+            return (
+              <Link
+                href={offset === 0 ? "/" : `/?offset=${offset}`}
+                aria-label={`Go to ${label}`}
+                className="mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-400 active:bg-gray-100"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <line x1="4" y1="12" x2="18" y2="12" />
+                  <polyline points="12 6 18 12 12 18" />
+                </svg>
+              </Link>
+            );
+          }}
           emptyText={
             hasFilter
               ? "Nothing matches — try fewer filters or a shorter search term."

@@ -1,6 +1,10 @@
 import "server-only";
 import { prisma } from "./db";
 import { rangeFor, todayInTz, SEARCH_PAGE_SIZE, type Period } from "./periods";
+import { parseAmountMinor } from "./money";
+import type { SearchByField } from "./search";
+
+export type { SearchByField };
 
 export type PlainAccount = {
   id: string;
@@ -160,6 +164,8 @@ export type SearchFilters = {
   end: string | null;
   minMinor: number | null;
   maxMinor: number | null;
+  /** Fields `q` is matched against; defaults to description + exact amount. */
+  searchBy: SearchByField[];
 };
 
 export type SearchResult = {
@@ -193,8 +199,38 @@ export async function searchEntries(
         }
       : {};
 
-  const wantRecords = f.type !== "TRANSFER";
-  const wantTransfers = (f.type === null || f.type === "TRANSFER") && !f.categoryId;
+  // Free-text matching: `q` is OR-ed across the enabled fields. "amount" only
+  // contributes when q parses as a money amount (exact match on minor units).
+  const like = { contains: q, mode: "insensitive" as const };
+  const qMinorRaw = f.searchBy.includes("amount") ? parseAmountMinor(q) : null;
+  const qMinor = qMinorRaw !== null && Number.isSafeInteger(qMinorRaw) ? qMinorRaw : null;
+  const recordOr = q
+    ? [
+        ...(f.searchBy.includes("note") ? [{ note: like }] : []),
+        ...(qMinor !== null ? [{ amountMinor: qMinor }] : []),
+        ...(f.searchBy.includes("category") ? [{ category: { name: like } }] : []),
+        ...(f.searchBy.includes("account") ? [{ account: { name: like } }] : []),
+      ]
+    : [];
+  const transferOr = q
+    ? [
+        ...(f.searchBy.includes("note") ? [{ note: like }] : []),
+        ...(qMinor !== null ? [{ amountMinor: qMinor }] : []),
+        ...(f.searchBy.includes("account")
+          ? [{ fromAccount: { name: like } }, { toAccount: { name: like } }]
+          : []),
+      ]
+    : [];
+
+  // An empty OR list with a query present means "nothing can match" (e.g. only
+  // Amount enabled with non-numeric q): skip the query so counts zero out
+  // instead of falling back to an unfiltered match-all.
+  let wantRecords = f.type !== "TRANSFER";
+  let wantTransfers = (f.type === null || f.type === "TRANSFER") && !f.categoryId;
+  if (q) {
+    wantRecords &&= recordOr.length > 0;
+    wantTransfers &&= transferOr.length > 0;
+  }
 
   const recordWhere = {
     userId,
@@ -203,15 +239,7 @@ export async function searchEntries(
     ...(f.accountId ? { accountId: f.accountId } : {}),
     ...(dateFilter ? { date: dateFilter } : {}),
     ...amountFilter,
-    ...(q
-      ? {
-          OR: [
-            { note: { contains: q, mode: "insensitive" as const } },
-            { category: { name: { contains: q, mode: "insensitive" as const } } },
-            { account: { name: { contains: q, mode: "insensitive" as const } } },
-          ],
-        }
-      : {}),
+    ...(q ? { OR: recordOr } : {}),
   };
   const transferWhere = {
     userId,
@@ -221,17 +249,7 @@ export async function searchEntries(
       ...(f.accountId
         ? [{ OR: [{ fromAccountId: f.accountId }, { toAccountId: f.accountId }] }]
         : []),
-      ...(q
-        ? [
-            {
-              OR: [
-                { note: { contains: q, mode: "insensitive" as const } },
-                { fromAccount: { name: { contains: q, mode: "insensitive" as const } } },
-                { toAccount: { name: { contains: q, mode: "insensitive" as const } } },
-              ],
-            },
-          ]
-        : []),
+      ...(q ? [{ OR: transferOr }] : []),
     ],
   };
 
