@@ -272,6 +272,26 @@ test("keeps a chip toggle that lands mid-debounce", async ({ page }) => {
   await expect(page).toHaveURL(/[?&]by=[^&]*account/);
 });
 
+test("composes two rapid chip toggles instead of overwriting", async ({ page }) => {
+  await allTime(page);
+  await openAdvanced(page);
+
+  // Back-to-back, faster than the server round-trip: the second toggle must
+  // build on the first, not on the state the first started from.
+  await page.getByRole("button", { name: "Category", exact: true }).click();
+  await page.getByRole("button", { name: "Account", exact: true }).click();
+
+  await expect(page).toHaveURL(/[?&]by=(?=[^&]*category)(?=[^&]*account)/);
+  await expect(page.getByRole("button", { name: "Category", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+});
+
 test("jumps from a month card to that month on the dashboard", async ({ page }) => {
   await allTime(page);
 
