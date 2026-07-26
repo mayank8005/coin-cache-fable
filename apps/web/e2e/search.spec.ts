@@ -440,6 +440,12 @@ test("renders rather than crashing on invalid date params", async ({ page }) => 
   }
 });
 
+// The Next/Prev asymmetry in `stepPage` has no end-to-end test on purpose: the
+// pager's own `disabled={page >= totalPages}` guard blocks the tap in precisely
+// the situations where Next's missing upper clamp would change the outcome
+// (displayed page is `min(live.page, totalPages)`, so live.page >= totalPages
+// always renders Next disabled). The asymmetry is defensive; the enabled path
+// is covered by the double-tap test below.
 test("advances two pages when Next is tapped twice", async ({ page }) => {
   await seedExtraRecords(401);
   await allTime(page);
@@ -482,9 +488,10 @@ test("clamps a page past the end to the last real page", async ({ page }) => {
   expect(response.status()).toBe(200);
   const html = await response.text();
 
-  // The last page specifically — falling back to page 1 would also be non-empty,
-  // but it would read "1–200 of 409" and hold only same-day bulk rows. ("Page 3
-  // of 3" isn't assertable: React splits interpolated text into separate nodes.)
+  // The last page specifically: the heading is built from the page the server
+  // reports serving, so a fallback to page 1 would read "1–200 of 409" and hold
+  // only same-day bulk rows. ("Page 3 of 3" isn't assertable — React splits
+  // interpolated text into separate nodes in the SSR markup.)
   expect(html).toContain("401–409 of 409");
   expect(html).toContain("Old rent");
   expect(html).not.toContain("Nothing matches");

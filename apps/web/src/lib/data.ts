@@ -170,6 +170,8 @@ export type SearchResult = {
   entries: Entry[];
   /** Total matches across all pages; entries holds at most SEARCH_PAGE_SIZE. */
   totalCount: number;
+  /** The page these entries came from — a deep request is clamped to the last. */
+  page: number;
   expenseMinor: number;
   incomeMinor: number;
 };
@@ -277,7 +279,10 @@ export async function searchEntries(
   }
 
   const lastPage = Math.max(1, Math.ceil(totalCount / SEARCH_PAGE_SIZE));
-  const offset = (Math.min(page, lastPage) - 1) * SEARCH_PAGE_SIZE;
+  // Reported back so the UI labels the rows by the page that was served rather
+  // than re-deriving this clamp and risking a heading that contradicts them.
+  const servedPage = Math.max(1, Math.min(page, lastPage));
+  const offset = (servedPage - 1) * SEARCH_PAGE_SIZE;
   const fetchCount = offset + SEARCH_PAGE_SIZE;
 
   // `id` breaks ties the clock can't: rows imported in one batch share a
@@ -351,7 +356,7 @@ export async function searchEntries(
     .slice(offset, offset + SEARCH_PAGE_SIZE)
     .map((s) => s.entry);
 
-  return { entries, totalCount, expenseMinor, incomeMinor };
+  return { entries, totalCount, page: servedPage, expenseMinor, incomeMinor };
 }
 
 export async function getDashboard(opts: {

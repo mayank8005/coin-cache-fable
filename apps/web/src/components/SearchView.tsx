@@ -284,20 +284,24 @@ export default function SearchView(
 
   const totalPages = Math.max(1, Math.ceil(result.totalCount / SEARCH_PAGE_SIZE));
   const page = Math.min(live.page, totalPages);
-  // `result` always belongs to the page the server last settled on, so the
-  // "X–Y of Z" line has to be computed from that page — pairing an optimistic
-  // page with the previous page's rows reads as "401–600 of 409" mid-flight.
-  const settledPage = Math.min(Math.max(1, props.page), totalPages);
-  const settledOffset = (settledPage - 1) * SEARCH_PAGE_SIZE;
+  // The rows on screen belong to the page the server actually served, so the
+  // "X–Y of Z" line is computed from that — pairing an optimistic page with the
+  // previous page's rows reads as "401–600 of 409" mid-flight.
+  const settledOffset = (result.page - 1) * SEARCH_PAGE_SIZE;
   const firstShown = result.entries.length === 0 ? 0 : settledOffset + 1;
   const lastShown = Math.min(result.totalCount, settledOffset + result.entries.length);
 
   /**
-   * Prev steps from the clamped page, so it still moves after the result set
-   * shrank under an out-of-range live page. Next deliberately steps from the
-   * unclamped live page: clamping it against a `totalPages` that belongs to the
-   * previous (possibly narrower) result would swallow the second tap of a
-   * double-tap, and the server clamps an overshoot to the last page anyway.
+   * Prev steps from the clamped page so it still moves after the result set
+   * shrank under an out-of-range live page — that clamp is the whole fix for a
+   * dead first Prev tap.
+   *
+   * Next deliberately skips the upper clamp: `totalPages` describes the settled
+   * (possibly narrower) result, so clamping against it could pin a tap made
+   * while a widening filter is still in flight. Defensive only — the
+   * `disabled={page >= totalPages}` guard below blocks the tap in exactly the
+   * cases where the clamp would have bitten, so it is not observable through
+   * the UI (see the note on the pager tests).
    */
   function stepPage(delta: number) {
     const livePage = liveParams().page;
@@ -610,7 +614,7 @@ export default function SearchView(
               ‹ Prev
             </button>
             <span className="text-xs font-medium text-gray-500">
-              Page {page} of {totalPages}
+              Page {page.toLocaleString(locale)} of {totalPages.toLocaleString(locale)}
             </span>
             <button
               onClick={() => stepPage(1)}

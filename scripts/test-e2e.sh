@@ -4,58 +4,20 @@ set -euo pipefail
 run_id="$(date +%s)_$$"
 container="cc-e2e-db-${run_id}"
 database_name="coincache_e2e_${run_id}"
-lock_dir="${TMPDIR:-/tmp}/coincache-e2e.lock"
-lock_acquired=0
+
+# shellcheck source=scripts/e2e-lock.sh
+source "$(dirname "${BASH_SOURCE[0]}")/e2e-lock.sh"
 
 cleanup() {
   docker rm -f "$container" >/dev/null 2>&1 || true
-  # One shot: rm+rmdir could leave the directory behind with its pid file gone,
-  # which used to look like a lock nobody can reclaim.
-  if [[ "$lock_acquired" == "1" ]]; then
-    rm -rf "$lock_dir"
-  fi
+  release_lock
 }
 trap cleanup EXIT INT TERM
-
-acquire_lock() {
-  if mkdir "$lock_dir" 2>/dev/null; then
-    return 0
-  fi
-
-  local owner_pid=""
-  read_owner_pid() {
-    owner_pid=""
-    if [[ -r "$lock_dir/pid" ]]; then
-      IFS= read -r owner_pid < "$lock_dir/pid" || true
-    fi
-  }
-
-  read_owner_pid
-  # The owner writes its pid just after creating the directory; give that write
-  # a moment before concluding the file is missing for good.
-  if [[ -z "$owner_pid" ]]; then
-    sleep 1
-    read_owner_pid
-  fi
-
-  # Only a live owner keeps the lock. A missing or non-numeric pid file means a
-  # crashed or half-cleaned run left the directory behind, so reclaim it.
-  if [[ "$owner_pid" =~ ^[0-9]+$ ]] && kill -0 "$owner_pid" 2>/dev/null; then
-    return 1
-  fi
-
-  rm -rf "$lock_dir"
-  mkdir "$lock_dir" 2>/dev/null && return 0
-
-  return 1
-}
 
 if ! acquire_lock; then
   echo "Another CoinCache E2E run is already active. Wait for it to finish before retrying." >&2
   exit 1
 fi
-lock_acquired=1
-printf '%s\n' "$$" > "$lock_dir/pid"
 
 app_port="$(node scripts/find-free-port.mjs)"
 
