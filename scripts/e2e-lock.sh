@@ -52,13 +52,19 @@ try_claim() {
   # exists at this path it belongs to somebody else — a stalled claim whose
   # directory was recycled must never overwrite the new owner's proof.
   if ! ( set -C; printf '%s\n' "$$" > "$lock_pid_file" ) 2>/dev/null; then
-    # mkdir had just succeeded, so the path is normally fine: the usual cause is
-    # contention. Only an unwritable directory is a real environment problem.
-    if [[ -d "$lock_dir" && ! -w "$lock_dir" ]]; then
+    # Why did it fail? The write bit is not the answer: a `d-w-------` directory
+    # reports writable yet refuses creation, and a full filesystem refuses it
+    # too. Ask the directory directly, after ruling out the contention shapes.
+    if [[ ! -d "$lock_dir" ]]; then
+      lock_failure_reason="busy" # a waiter renamed our directory away
+    elif [[ -s "$lock_pid_file" ]]; then
+      lock_failure_reason="busy" # somebody else's proof landed here first
+    elif ( : > "$lock_dir/.probe.$$" ) 2>/dev/null; then
+      rm -f "$lock_dir/.probe.$$" 2>/dev/null || true
+      lock_failure_reason="busy" # the directory takes files; transient failure
+    else
       lock_failure_reason="unwritable"
       rmdir "$lock_dir" 2>/dev/null || true
-    else
-      lock_failure_reason="busy"
     fi
     return 1
   fi
@@ -85,21 +91,25 @@ await_owner_pid() {
 # Renamed-away locks whose owner is gone: collect them, but never touch one that
 # is still live (a hand-back we skipped because a third party re-claimed).
 sweep_stale_dirs() {
-  local dir had_nullglob
-  # Sourced library: leave the caller's glob options exactly as we found them,
-  # and don't let `failglob` turn "no litter" into an error.
+  local dir had_nullglob had_failglob
+  # Sourced library: leave the caller's glob options exactly as we found them.
+  # Both matter here — nullglob makes a no-match glob expand to nothing, but it
+  # does NOT stop failglob from aborting the function on that same no-match, so
+  # failglob has to be off for the duration too.
   had_nullglob="$(shopt -p nullglob || true)"
-  shopt -s nullglob
+  had_failglob="$(shopt -p failglob || true)"
+  shopt -s nullglob || true
+  shopt -u failglob || true
   # The prefix stays quoted so glob metacharacters in TMPDIR (a literal "[" is
-  # enough) can't turn the path itself into a pattern; nullglob covers the
-  # no-litter case, so no separate existence guard is needed.
+  # enough) can't turn the path itself into a pattern.
   for dir in "$lock_dir".stale.*; do
     [[ -d "$dir" ]] || continue
     # Undeletable litter (foreign owner in a shared /tmp, read-only mode) must
     # not print on every future run.
     pid_is_live "$(read_owner_pid "$dir")" || rm -rf "$dir" 2>/dev/null || true
   done
-  eval "$had_nullglob"
+  eval "$had_nullglob" || true
+  eval "$had_failglob" || true
 }
 
 acquire_lock() {

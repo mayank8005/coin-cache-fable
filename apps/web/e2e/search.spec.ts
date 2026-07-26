@@ -589,11 +589,22 @@ test("swaps reversed amount bounds when the field loses focus", async ({ page })
   await expect.poll(() => region.textContent()).not.toBe(first);
   await expect(region).toHaveText(spoken);
 
-  // The region outlives the panel it belongs to: collapsing blurs the input,
-  // which is itself a swap trigger.
+  // Collapsing the panel is itself a swap trigger — the toggle click is the
+  // blur, with nothing in between — and the region has to outlive the panel it
+  // belongs to in order to announce it.
+  await min.fill("900");
+  await max.fill("30");
   await page.getByRole("button", { name: /Advanced filters/ }).click();
   await expect(page.getByLabel("Minimum amount")).toHaveCount(0);
-  await expect(region).toHaveText(spoken);
+  await expect(region).toHaveText(
+    /^Amount bounds swapped: minimum 30, maximum 900\u200B?$/,
+  );
+  await expect(page).toHaveURL(/min=30/);
+  await expect(page).toHaveURL(/max=900/);
+
+  await openAdvanced(page);
+  await expect(page.getByLabel("Minimum amount")).toHaveValue("30");
+  await expect(page.getByLabel("Maximum amount")).toHaveValue("900");
 });
 
 test("leaves the bounds alone while tabbing between them", async ({ page }) => {
