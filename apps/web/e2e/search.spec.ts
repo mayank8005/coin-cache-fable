@@ -131,8 +131,12 @@ test("matches description by default and account only when enabled", async ({ pa
   await searchBox(page).fill("Bank");
   await expect(page.getByText(EMPTY_TEXT)).toBeVisible();
   await openAdvanced(page);
-  await page.getByRole("button", { name: "Account", exact: true }).click();
-  await expect(page).toHaveURL(/by=note%2Camount%2Caccount/);
+  const accountChip = page.getByRole("button", { name: "Account", exact: true });
+  await expect(accountChip).toHaveAttribute("aria-pressed", "false");
+  await accountChip.click();
+  // Field order in the param is an implementation detail; the set is what matters.
+  await expect(page).toHaveURL(/[?&]by=(?=[^&]*note)(?=[^&]*amount)(?=[^&]*account)/);
+  await expect(accountChip).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("Bus pass")).toBeVisible();
   await expect(page.getByText("Old rent")).toBeVisible();
 });
@@ -158,9 +162,14 @@ test("returns nothing for a non-numeric query when only Amount is enabled", asyn
   await expect(page.getByText(EMPTY_TEXT)).toBeVisible();
   await expect(page.getByRole("heading", { name: "0 results", exact: true })).toBeVisible();
 
-  // The last active field can't be switched off.
-  await page.getByRole("button", { name: "Amount", exact: true }).click();
+  // The last active field can't be switched off, and says so.
+  const amountChip = page.getByRole("button", { name: "Amount", exact: true });
+  await expect(amountChip).toHaveAttribute("aria-disabled", "true");
+  // aria-disabled makes Playwright consider the button unactionable, but a real
+  // browser still dispatches the click — force it to prove the handler no-ops.
+  await amountChip.click({ force: true });
   await expect(page).toHaveURL(/by=amount/);
+  await expect(amountChip).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText(EMPTY_TEXT)).toBeVisible();
 
   await searchBox(page).fill("1234.50");
@@ -170,9 +179,57 @@ test("returns nothing for a non-numeric query when only Amount is enabled", asyn
   await page.reload();
   await expect(page).toHaveURL(/\/search$/);
   await openAdvanced(page);
-  await expect(page.getByRole("button", { name: "Description", exact: true })).toHaveClass(
-    /bg-brand/,
+  await expect(page.getByRole("button", { name: "Description", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
   );
+});
+
+test("filters on a valid minimum and survives an out-of-range one", async ({ page }) => {
+  await allTime(page);
+  await openAdvanced(page);
+
+  await page.getByLabel("Minimum amount").fill("500");
+  await expect(page.getByRole("heading", { name: "2 results", exact: true })).toBeVisible();
+  await expect(page.getByText("Old rent")).toBeVisible();
+  await expect(page.getByText("Monthly salary")).toBeVisible();
+
+  // Bigger than any storable amount: the bound is dropped rather than handed to
+  // Prisma as a Float, which used to blow up the whole page.
+  await page.getByLabel("Minimum amount").fill("90071992547410");
+  await expect(page).toHaveURL(/min=90071992547410/);
+  await expect(page.getByRole("heading", { name: /^\d+ results?$/ })).toBeVisible();
+  await expect(page.getByText("Old rent")).toBeVisible();
+});
+
+test("keeps a collapsed month card collapsed across filter changes", async ({ page }) => {
+  await allTime(page);
+
+  const old = group(page, monthLabel(dates.oldRent));
+  await old.click();
+  await expect(old).toHaveAttribute("aria-expanded", "false");
+
+  await searchBox(page).fill("Old");
+  await expect(page.getByRole("heading", { name: "2 results", exact: true })).toBeVisible();
+  const stillOld = group(page, monthLabel(dates.oldRent));
+  await expect(stillOld).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByText("Old rent")).toBeHidden();
+
+  await stillOld.click();
+  await expect(page.getByText("Old rent")).toBeVisible();
+});
+
+test("keeps a chip toggle that lands mid-debounce", async ({ page }) => {
+  await allTime(page);
+  await openAdvanced(page);
+
+  // No wait between the two: the pending 350ms timer must not revert the chip.
+  await searchBox(page).fill("Bank");
+  await page.getByRole("button", { name: "Account", exact: true }).click();
+
+  await expect(page.getByText("Bus pass")).toBeVisible();
+  await expect(page).toHaveURL(/q=Bank/);
+  await expect(page).toHaveURL(/[?&]by=[^&]*account/);
 });
 
 test("jumps from a month card to that month on the dashboard", async ({ page }) => {

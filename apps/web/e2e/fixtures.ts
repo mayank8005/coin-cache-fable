@@ -9,7 +9,9 @@ process.env.DATABASE_URL = requireSafeE2eDatabaseUrl();
 const prisma = new PrismaClient();
 
 export type SeedDates = {
+  /** Always the real current date: dialogs default to it and tests add records there. */
   today: string;
+  /** Three further dates in the same calendar month as `today` (see `siblingDays`). */
   yesterday: string;
   incomeOnly: string;
   transferOnly: string;
@@ -34,6 +36,18 @@ function shiftDate(iso: string, days: number): string {
   const date = new Date(`${iso}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Three dates that always share `today`'s calendar month, so the dashboard's
+ * month view holds all four fixture dates. On the 1st–3rd, counting backwards
+ * would spill into the previous month and silently drop date cards, so the
+ * trio moves forward instead (every month has at least 28 days).
+ */
+function siblingDays(today: string): [string, string, string] {
+  const dayOfMonth = Number(today.slice(8, 10));
+  const step = dayOfMonth >= 4 ? -1 : 1;
+  return [shiftDate(today, step), shiftDate(today, step * 2), shiftDate(today, step * 3)];
 }
 
 /** A fixed day in the month `months` away, so the pair never straddles a boundary. */
@@ -114,11 +128,12 @@ export async function seedDashboard(): Promise<SeedDates> {
   ]);
 
   const today = todayInIndia();
+  const [yesterday, incomeOnly, transferOnly] = siblingDays(today);
   const dates: SeedDates = {
     today,
-    yesterday: shiftDate(today, -1),
-    incomeOnly: shiftDate(today, -2),
-    transferOnly: shiftDate(today, -3),
+    yesterday,
+    incomeOnly,
+    transferOnly,
     oldRent: shiftMonthDay(today, -2, 12),
     oldMisc: shiftMonthDay(today, -2, 14),
   };

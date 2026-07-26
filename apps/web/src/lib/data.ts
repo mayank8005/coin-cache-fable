@@ -4,8 +4,6 @@ import { rangeFor, todayInTz, SEARCH_PAGE_SIZE, type Period } from "./periods";
 import { parseAmountMinor } from "./money";
 import type { SearchByField } from "./search";
 
-export type { SearchByField };
-
 export type PlainAccount = {
   id: string;
   name: string;
@@ -202,8 +200,7 @@ export async function searchEntries(
   // Free-text matching: `q` is OR-ed across the enabled fields. "amount" only
   // contributes when q parses as a money amount (exact match on minor units).
   const like = { contains: q, mode: "insensitive" as const };
-  const qMinorRaw = f.searchBy.includes("amount") ? parseAmountMinor(q) : null;
-  const qMinor = qMinorRaw !== null && Number.isSafeInteger(qMinorRaw) ? qMinorRaw : null;
+  const qMinor = f.searchBy.includes("amount") ? parseAmountMinor(q) : null;
   const recordOr = q
     ? [
         ...(f.searchBy.includes("note") ? [{ note: like }] : []),

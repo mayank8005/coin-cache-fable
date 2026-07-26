@@ -147,6 +147,10 @@ export default function EntryList(props: {
     );
   }
 
+  // Only date-grouped cards carry the date in the header, so every other mode
+  // repeats it on the row.
+  const showRowDate = groupBy !== "date";
+
   const totalExpenseMinor = entries.reduce(
     (sum, entry) =>
       entry.kind === "record" && entry.type === "EXPENSE" ? sum + entry.amountMinor : sum,
@@ -155,18 +159,25 @@ export default function EntryList(props: {
 
   return (
     <div className="space-y-3">
-      {groups.map((g, index) => {
+      {groups.map((g) => {
         const toggled = openGroups.has(g.key);
         const open = defaultExpanded ? !toggled : toggled;
-        const contentId = `${idPrefix}-group-${index}`;
+        const contentId = `${idPrefix}-group-${g.key.replace(/[^A-Za-z0-9_-]/g, "_")}`;
         const expenseShare = totalExpenseMinor > 0 ? g.expenseMinor / totalExpenseMinor : 0;
         const percent = Math.round(expenseShare * 100);
-        const summary =
-          g.expenseMinor > 0
-            ? { label: "Spent", amount: g.expenseMinor, className: "text-expense" }
-            : g.incomeMinor > 0
-              ? { label: "Income", amount: g.incomeMinor, className: "text-income" }
-              : { label: "Transferred", amount: g.transferMinor, className: "text-gray-500" };
+        // A group can hold both directions (a month with salary and spending),
+        // so show every non-zero side; transfers are the fallback.
+        const summaries: { label: string; amount: number; className: string }[] = [];
+        if (g.expenseMinor > 0)
+          summaries.push({ label: "Spent", amount: g.expenseMinor, className: "text-expense" });
+        if (g.incomeMinor > 0)
+          summaries.push({ label: "Income", amount: g.incomeMinor, className: "text-income" });
+        if (summaries.length === 0)
+          summaries.push({
+            label: "Transferred",
+            amount: g.transferMinor,
+            className: "text-gray-500",
+          });
 
         const headerButton = (
             <button
@@ -210,11 +221,15 @@ export default function EntryList(props: {
                   <polyline points="6 9 12 15 18 9" />
                 </svg>
               </span>
-              <span className="mt-2 flex items-baseline gap-2">
-                <span className="text-xs font-medium text-gray-400">{summary.label}</span>
-                <span className={`text-sm font-semibold ${summary.className}`}>
-                  {formatMoney(summary.amount, currency, locale)}
-                </span>
+              <span className="mt-2 flex items-baseline gap-3">
+                {summaries.map((s) => (
+                  <span key={s.label} className="flex items-baseline gap-2">
+                    <span className="text-xs font-medium text-gray-400">{s.label}</span>
+                    <span className={`text-sm font-semibold ${s.className}`}>
+                      {formatMoney(s.amount, currency, locale)}
+                    </span>
+                  </span>
+                ))}
                 {showProgressBar && g.expenseMinor > 0 && (
                   <span className="ml-auto text-xs font-medium text-gray-400">{percent}%</span>
                 )}
@@ -272,11 +287,14 @@ export default function EntryList(props: {
                               {groupBy === "category" ? e.note || e.categoryName : e.categoryName}
                             </div>
                             <div className="truncate text-xs text-gray-400">
-                              {groupBy === "category"
-                                ? `${SHORT_DATE_FMT.format(new Date(e.date + "T00:00:00Z"))} · ${e.accountName}`
-                                : groupBy === "month"
-                                  ? `${SHORT_DATE_FMT.format(new Date(e.date + "T00:00:00Z"))} · ${e.accountName}${e.note ? ` · ${e.note}` : ""}`
-                                  : `${e.accountName}${e.note ? ` · ${e.note}` : ""}`}
+                              {[
+                                ...(showRowDate
+                                  ? [SHORT_DATE_FMT.format(new Date(e.date + "T00:00:00Z"))]
+                                  : []),
+                                e.accountName,
+                                // The note is the row title in category mode.
+                                ...(e.note && groupBy !== "category" ? [e.note] : []),
+                              ].join(" · ")}
                             </div>
                           </div>
                           <span
@@ -302,9 +320,12 @@ export default function EntryList(props: {
                               {e.fromAccountName} → {e.toAccountName}
                             </div>
                             <div className="truncate text-xs text-gray-400">
-                              {groupBy === "category" || groupBy === "month"
-                                ? `${SHORT_DATE_FMT.format(new Date(e.date + "T00:00:00Z"))}${e.note ? ` · ${e.note}` : ""}`
-                                : `Transfer${e.note ? ` · ${e.note}` : ""}`}
+                              {[
+                                showRowDate
+                                  ? SHORT_DATE_FMT.format(new Date(e.date + "T00:00:00Z"))
+                                  : "Transfer",
+                                ...(e.note ? [e.note] : []),
+                              ].join(" · ")}
                             </div>
                           </div>
                           <span className="shrink-0 text-sm font-semibold text-gray-500">

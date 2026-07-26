@@ -35,19 +35,46 @@ type Params = {
   searchBy: SearchByField[];
 };
 
-function Chip(props: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function Chip(props: {
+  active: boolean;
+  /** Active and un-toggleable: still clickable, but the click does nothing. */
+  locked?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <button
+      type="button"
       onClick={props.onClick}
+      aria-pressed={props.active}
+      aria-disabled={props.locked ? true : undefined}
       className={`shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 text-xs font-medium transition-colors ${
         props.active
           ? "bg-brand text-white shadow-sm"
           : "border border-gray-200 bg-white text-gray-600 active:bg-gray-100"
-      }`}
+      }${props.locked ? " cursor-default opacity-60" : ""}`}
     >
       {props.children}
     </button>
   );
+}
+
+function buildQuery(p: Params, page?: number): string {
+  const s = new URLSearchParams();
+  if (p.q.trim()) s.set("q", p.q.trim());
+  if (p.type) s.set("type", p.type);
+  if (p.range !== "month") s.set("range", p.range);
+  if (p.range === "custom") {
+    if (p.from) s.set("from", p.from);
+    if (p.to) s.set("to", p.to);
+  }
+  if (p.min.trim()) s.set("min", p.min.trim());
+  if (p.max.trim()) s.set("max", p.max.trim());
+  if (p.categoryId) s.set("category", p.categoryId);
+  if (p.accountId) s.set("account", p.accountId);
+  if (!isDefaultSearchBy(p.searchBy)) s.set("by", serializeSearchBy(p.searchBy));
+  if (page && page > 1) s.set("page", String(page));
+  return s.toString();
 }
 
 function RowLabel(props: { children: React.ReactNode }) {
@@ -85,35 +112,55 @@ export default function SearchView(
   );
   const [advOpen, setAdvOpen] = useState(false);
 
+  const fromProps: Params = {
+    q: props.q,
+    type: props.type,
+    range: props.range,
+    from: props.from,
+    to: props.to,
+    min: props.min,
+    max: props.max,
+    categoryId: props.categoryId,
+    accountId: props.accountId,
+    searchBy: props.searchBy,
+  };
+
+  // Props only catch up after a server round-trip, so a filter change pushed in
+  // the last few hundred ms isn't visible in them yet. `pending` remembers what
+  // we last navigated to and is dropped as soon as the server state moves,
+  // whether that's our own push landing or a reset navigating elsewhere.
+  const pending = useRef<Params | null>(null);
+  const lastPropsUrl = useRef<string | null>(null);
+  const propsUrl = buildQuery(fromProps, props.page);
+  if (lastPropsUrl.current !== propsUrl) {
+    lastPropsUrl.current = propsUrl;
+    pending.current = null;
+  }
+  const live = pending.current ?? fromProps;
+  const liveRef = useRef(live);
+  liveRef.current = live;
+
   // Any filter change goes back to page 1; only the pager passes `page`.
+  // Reads the live params through a ref so a debounced call scheduled before a
+  // chip toggle (or a second rapid toggle) can't rebuild the URL from stale ones.
   function update(patch: Partial<Params> & { page?: number }) {
+    const base = liveRef.current;
     const next: Params = {
+      // The text inputs are controlled locally, so their live value is `text`;
+      // the debounced caller passes all three explicitly anyway.
       q: patch.q ?? text,
-      type: patch.type === undefined ? props.type : patch.type,
-      range: patch.range ?? props.range,
-      from: patch.from === undefined ? props.from : patch.from,
-      to: patch.to === undefined ? props.to : patch.to,
+      type: patch.type === undefined ? base.type : patch.type,
+      range: patch.range ?? base.range,
+      from: patch.from === undefined ? base.from : patch.from,
+      to: patch.to === undefined ? base.to : patch.to,
       min: patch.min ?? minText,
       max: patch.max ?? maxText,
-      categoryId: patch.categoryId === undefined ? props.categoryId : patch.categoryId,
-      accountId: patch.accountId === undefined ? props.accountId : patch.accountId,
-      searchBy: patch.searchBy ?? props.searchBy,
+      categoryId: patch.categoryId === undefined ? base.categoryId : patch.categoryId,
+      accountId: patch.accountId === undefined ? base.accountId : patch.accountId,
+      searchBy: patch.searchBy ?? base.searchBy,
     };
-    const s = new URLSearchParams();
-    if (next.q.trim()) s.set("q", next.q.trim());
-    if (next.type) s.set("type", next.type);
-    if (next.range !== "month") s.set("range", next.range);
-    if (next.range === "custom") {
-      if (next.from) s.set("from", next.from);
-      if (next.to) s.set("to", next.to);
-    }
-    if (next.min.trim()) s.set("min", next.min.trim());
-    if (next.max.trim()) s.set("max", next.max.trim());
-    if (next.categoryId) s.set("category", next.categoryId);
-    if (next.accountId) s.set("account", next.accountId);
-    if (!isDefaultSearchBy(next.searchBy)) s.set("by", serializeSearchBy(next.searchBy));
-    if (patch.page && patch.page > 1) s.set("page", String(patch.page));
-    const str = s.toString();
+    pending.current = next;
+    const str = buildQuery(next, patch.page);
     // Jump back to the top when flipping pages; stay put while tweaking filters.
     router.replace(str ? `/search?${str}` : "/search", { scroll: Boolean(patch.page) });
   }
@@ -137,6 +184,7 @@ export default function SearchView(
   useEffect(() => {
     if (window.location.search) {
       resetting.current = true;
+      pending.current = null;
       setText("");
       setMinText("");
       setMaxText("");
@@ -163,19 +211,20 @@ export default function SearchView(
     }
   });
 
-  // At least one field must stay on, so un-toggling the last one is a no-op.
+  // At least one field must stay on, so un-toggling the last one is a no-op
+  // (the chip renders as aria-disabled to explain the dead click).
   function toggleSearchBy(id: SearchByField) {
-    const active = props.searchBy.includes(id);
-    if (active && props.searchBy.length === 1) return;
-    update({
-      searchBy: active ? props.searchBy.filter((f) => f !== id) : [...props.searchBy, id],
-    });
+    const current = liveRef.current.searchBy;
+    const active = current.includes(id);
+    if (active && current.length === 1) return;
+    update({ searchBy: active ? current.filter((f) => f !== id) : [...current, id] });
   }
 
   function clearAll() {
     setText("");
     setMinText("");
     setMaxText("");
+    pending.current = null;
     skipFirst.current = true; // the state resets above shouldn't re-trigger a push
     router.replace("/search", { scroll: false });
   }
@@ -197,7 +246,7 @@ export default function SearchView(
     (props.categoryId !== null ? 1 : 0) +
     (props.accountId !== null ? 1 : 0) +
     (props.min.trim() !== "" || props.max.trim() !== "" ? 1 : 0) +
-    (isDefaultSearchBy(props.searchBy) ? 0 : 1);
+    (isDefaultSearchBy(live.searchBy) ? 0 : 1);
   const hasFilter = advCount > 0 || props.range !== "month" || props.q.trim() !== "";
 
   return (
@@ -308,7 +357,8 @@ export default function SearchView(
             {SEARCH_BY_FIELDS.map((f) => (
               <Chip
                 key={f.id}
-                active={props.searchBy.includes(f.id)}
+                active={live.searchBy.includes(f.id)}
+                locked={live.searchBy.length === 1 && live.searchBy[0] === f.id}
                 onClick={() => toggleSearchBy(f.id)}
               >
                 {f.label}
