@@ -9,9 +9,10 @@ lock_acquired=0
 
 cleanup() {
   docker rm -f "$container" >/dev/null 2>&1 || true
+  # One shot: rm+rmdir could leave the directory behind with its pid file gone,
+  # which used to look like a lock nobody can reclaim.
   if [[ "$lock_acquired" == "1" ]]; then
-    rm -f "$lock_dir/pid"
-    rmdir "$lock_dir" >/dev/null 2>&1 || true
+    rm -rf "$lock_dir"
   fi
 }
 trap cleanup EXIT INT TERM
@@ -22,14 +23,29 @@ acquire_lock() {
   fi
 
   local owner_pid=""
-  if [[ -r "$lock_dir/pid" ]]; then
-    IFS= read -r owner_pid < "$lock_dir/pid" || true
+  read_owner_pid() {
+    owner_pid=""
+    if [[ -r "$lock_dir/pid" ]]; then
+      IFS= read -r owner_pid < "$lock_dir/pid" || true
+    fi
+  }
+
+  read_owner_pid
+  # The owner writes its pid just after creating the directory; give that write
+  # a moment before concluding the file is missing for good.
+  if [[ -z "$owner_pid" ]]; then
+    sleep 1
+    read_owner_pid
   fi
-  if [[ "$owner_pid" =~ ^[0-9]+$ ]] && ! kill -0 "$owner_pid" 2>/dev/null; then
-    rm -f "$lock_dir/pid"
-    rmdir "$lock_dir" >/dev/null 2>&1 || true
-    mkdir "$lock_dir" 2>/dev/null && return 0
+
+  # Only a live owner keeps the lock. A missing or non-numeric pid file means a
+  # crashed or half-cleaned run left the directory behind, so reclaim it.
+  if [[ "$owner_pid" =~ ^[0-9]+$ ]] && kill -0 "$owner_pid" 2>/dev/null; then
+    return 1
   fi
+
+  rm -rf "$lock_dir"
+  mkdir "$lock_dir" 2>/dev/null && return 0
 
   return 1
 }

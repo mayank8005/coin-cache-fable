@@ -292,10 +292,18 @@ export default function SearchView(
   const firstShown = result.entries.length === 0 ? 0 : settledOffset + 1;
   const lastShown = Math.min(result.totalCount, settledOffset + result.entries.length);
 
-  /** Step the pager from the clamped page, so Prev works after a shrink. */
+  /**
+   * Prev steps from the clamped page, so it still moves after the result set
+   * shrank under an out-of-range live page. Next deliberately steps from the
+   * unclamped live page: clamping it against a `totalPages` that belongs to the
+   * previous (possibly narrower) result would swallow the second tap of a
+   * double-tap, and the server clamps an overshoot to the last page anyway.
+   */
   function stepPage(delta: number) {
-    const current = Math.min(liveParams().page, totalPages);
-    update({ page: Math.min(totalPages, Math.max(1, current + delta)) });
+    const livePage = liveParams().page;
+    const next =
+      delta < 0 ? Math.max(1, Math.min(livePage, totalPages) + delta) : livePage + delta;
+    update({ page: next });
   }
 
   // Counted off `live` so the badge reflects a just-tapped filter instead of
@@ -525,8 +533,10 @@ export default function SearchView(
         <div className="mb-2 flex items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">
             {totalPages > 1
-              ? `${firstShown}–${lastShown} of ${result.totalCount.toLocaleString(locale)}`
-              : `${result.totalCount} result${result.totalCount === 1 ? "" : "s"}`}
+              ? `${firstShown.toLocaleString(locale)}–${lastShown.toLocaleString(locale)} of ${result.totalCount.toLocaleString(locale)}`
+              : `${result.totalCount.toLocaleString(locale)} result${
+                  result.totalCount === 1 ? "" : "s"
+                }`}
           </h2>
           <span className="flex items-baseline gap-2 text-xs">
             {result.expenseMinor > 0 && (
