@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { Entry, PlainAccount, PlainCategory, SearchResult } from "@/lib/data";
 import {
   MAX_PERIOD_OFFSET,
+  parseIsoDate,
   SEARCH_PAGE_SIZE,
   SEARCH_RANGES,
   type SearchRange,
@@ -83,6 +84,15 @@ function buildQuery(p: Params): string {
   if (!isDefaultSearchBy(p.searchBy)) s.set("by", serializeSearchBy(p.searchBy));
   if (p.page > 1) s.set("page", String(p.page));
   return s.toString();
+}
+
+/** True when both bound pairs parse to the same unordered pair. */
+function sameBounds(aMin: string, aMax: string, bMin: string, bMax: string): boolean {
+  const key = (lo: string, hi: string) =>
+    [parseAmountMinor(lo), parseAmountMinor(hi)]
+      .sort((x, y) => (x ?? -1) - (y ?? -1))
+      .join(",");
+  return key(aMin, aMax) === key(bMin, bMax);
 }
 
 function RowLabel(props: { children: React.ReactNode }) {
@@ -204,7 +214,16 @@ export default function SearchView(
         maxText.trim() === base.max.trim()
       )
         return;
-      update({ q: text, min: minText, max: maxText });
+      // Reordering the bounds filters exactly the same rows, so it must not
+      // throw the reader back to page 1 the way a real filter change does.
+      const neutral =
+        text.trim() === base.q.trim() && sameBounds(minText, maxText, base.min, base.max);
+      update({
+        q: text,
+        min: minText,
+        max: maxText,
+        ...(neutral ? { page: base.page } : {}),
+      });
     }, 350);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -284,6 +303,16 @@ export default function SearchView(
    */
   function announceSwap(text: string) {
     setBoundsNotice((previous) => (previous.endsWith("\u200B") ? text : `${text}\u200B`));
+  }
+
+  /**
+   * A date the server rejects would never move props, so `pending` would never
+   * reconcile and the bad value would stick in the URL. Half-typed years reach
+   * onChange, so only push what the server will accept.
+   */
+  function pushDate(field: "from" | "to", value: string) {
+    if (value === "") update({ [field]: null });
+    else if (parseIsoDate(value)) update({ [field]: value });
   }
 
   function toggleType(id: "EXPENSE" | "INCOME" | "TRANSFER") {
@@ -415,8 +444,9 @@ export default function SearchView(
               <input
                 type="date"
                 value={live.from ?? ""}
+                min="1900-01-01"
                 max={props.todayIso}
-                onChange={(e) => update({ from: e.target.value || null })}
+                onChange={(e) => pushDate("from", e.target.value)}
                 className="h-10 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 text-sm text-gray-700 outline-none focus:border-brand"
                 aria-label="From date"
               />
@@ -424,8 +454,9 @@ export default function SearchView(
               <input
                 type="date"
                 value={live.to ?? ""}
+                min="1900-01-01"
                 max={props.todayIso}
-                onChange={(e) => update({ to: e.target.value || null })}
+                onChange={(e) => pushDate("to", e.target.value)}
                 className="h-10 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 text-sm text-gray-700 outline-none focus:border-brand"
                 aria-label="To date"
               />

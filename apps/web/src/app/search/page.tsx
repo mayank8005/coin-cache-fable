@@ -5,30 +5,18 @@ import {
   getSettings,
   searchEntries,
 } from "@/lib/data";
-import { rangeFor, todayInTz, SEARCH_RANGES, type SearchRange } from "@/lib/periods";
+import {
+  parseIsoDate,
+  rangeFor,
+  todayInTz,
+  SEARCH_RANGES,
+  type SearchRange,
+} from "@/lib/periods";
 import { parseAmountMinor } from "@/lib/money";
 import { parseSearchBy } from "@/lib/search";
 import SearchView from "@/components/SearchView";
 
 export const dynamic = "force-dynamic";
-
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-/**
- * A real calendar date, not just the right shape: "2026-13-45" and "2026-02-30"
- * both pass the regex but blow up (or silently roll over) once they reach
- * `new Date()` or Prisma. The year bound keeps `nextDay()` inside the range
- * `toISOString()` can render without an expanded-year prefix ("+010000-…").
- */
-function parseIsoDate(v: unknown): string | null {
-  if (typeof v !== "string" || !ISO_DATE.test(v)) return null;
-  const [y, m, d] = v.split("-").map(Number);
-  if (y < 1900 || y > 9998) return null;
-  const date = new Date(Date.UTC(y, m - 1, d));
-  const roundTrips =
-    date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
-  return roundTrips ? v : null;
-}
 
 function nextDay(iso: string): string {
   const d = new Date(iso + "T00:00:00Z");

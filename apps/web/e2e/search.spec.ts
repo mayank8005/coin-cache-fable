@@ -55,7 +55,7 @@ async function signIn(page: Page) {
   await expect(page).toHaveURL(/\/$/);
 }
 
-/** Search opens with "This month"; every test here needs the older fixtures too. */
+/** Search opens with "This month"; most tests here need the older fixtures too. */
 async function allTime(page: Page) {
   await page.getByRole("button", { name: "All time" }).click();
   await expect(page).toHaveURL(/range=all/);
@@ -625,4 +625,41 @@ test("leaves the bounds alone while tabbing between them", async ({ page }) => {
   await expect(max).toHaveValue("2000");
   await expect(page).toHaveURL(/min=1000/);
   await expect(page).toHaveURL(/max=2000/);
+});
+
+test("keeps the current page when reordering the amount bounds", async ({ page }) => {
+  await seedExtraRecords(401);
+  await allTime(page);
+  await openAdvanced(page);
+  await page.getByRole("button", { name: "Next ›" }).click();
+  await expect(page.getByText("Page 2 of 3")).toBeVisible();
+
+  const min = page.getByLabel("Minimum amount");
+  const max = page.getByLabel("Maximum amount");
+  await max.fill("1");
+  await min.fill("10000");
+  await expect(page).toHaveURL(/min=10000&max=1/);
+
+  // Tapping Next blurs Min, so the page step and the swap land together (the
+  // bounds themselves reset to page 1 a moment ago, as a real filter change
+  // should). The swap filters the same rows, so the page it lands on has to
+  // survive the push the swap triggers instead of snapping back to page 1.
+  // The Advanced-collapse blur reaches this same push through the same path.
+  await page.getByRole("button", { name: "Next ›" }).click();
+  await expect(page).toHaveURL(/min=1&max=10000/);
+  await expect(page).toHaveURL(/page=2/);
+  await expect(page.getByText("Page 2 of 3")).toBeVisible();
+});
+
+test("never pushes a date the server would reject", async ({ page }) => {
+  await page.getByRole("button", { name: "Custom…" }).click();
+  const from = page.getByLabel("From date");
+
+  await from.fill("0019-05-01");
+  await expect(from).toHaveValue("");
+  await expect(page).not.toHaveURL(/from=/);
+
+  await from.fill("2026-01-01");
+  await expect(page).toHaveURL(/from=2026-01-01/);
+  await expect(from).toHaveValue("2026-01-01");
 });

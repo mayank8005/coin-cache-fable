@@ -23,6 +23,7 @@ import {
   requireUser,
   verifyPassword,
 } from "./auth";
+import { MAX_AMOUNT_MINOR } from "./money";
 
 export type ActionErrorField = "description";
 export type ActionResult = { ok: boolean; error?: string; field?: ActionErrorField };
@@ -32,7 +33,7 @@ const passwordSchema = z.string().min(8, "Password must be at least 8 characters
 const nameSchema = z.string().trim().min(1).max(100);
 const idSchema = z.string().cuid();
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const amountSchema = z.number().int().positive().max(9_000_000_000_000);
+const amountSchema = z.number().int().positive().max(MAX_AMOUNT_MINOR);
 const colorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const iconSchema = z.string().min(1).max(8);
 

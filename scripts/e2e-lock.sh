@@ -5,7 +5,7 @@
 # ownership. Three rules keep that honest:
 #   * a claim is `mkdir` (atomic, exactly one winner) and is only complete once
 #     the pid file is written — waiters treat "directory but no pid yet" as a
-#     run mid-claim, never as abandoned;
+#     run mid-claim, never as abandoned until a bounded grace expires;
 #   * reclaiming a stale lock renames it away first, so only one waiter can
 #     clear it and nobody deletes a directory another run just created;
 #   * releasing checks the lock still holds OUR pid before removing it.

@@ -22,13 +22,14 @@ export function formatMoney(
  */
 const NUMBER_INPUT_VALUE = /^(\d+(\.\d+)?|\.\d+)([eE][+-]?\d+)?$/;
 
-/** Mirrors `amountSchema`'s cap in actions.ts: nothing larger can be stored. */
-const MAX_AMOUNT_MINOR = 9_000_000_000_000;
+/** The largest storable amount; `amountSchema` in actions.ts caps writes here. */
+export const MAX_AMOUNT_MINOR = 9_000_000_000_000;
 
 /**
- * Parse a positive money amount ("250" or "99.50") into minor units, else null.
- * Shared by the search route (min/max params) and `searchEntries` (exact-amount
- * matching) so both round the same way.
+ * Parse a non-negative amount in any form `<input type="number">` produces —
+ * "250", "99.50", ".5", "1e3" — into minor units, else null. Shared by the
+ * search route (min/max params) and `searchEntries` (exact-amount matching) so
+ * both round the same way, and bounded by MAX_AMOUNT_MINOR.
  *
  * `amountMinor` is a Prisma BigInt column: handing it a non-integer Float throws
  * at query time, so anything unrepresentable (or beyond the write-path cap) is
