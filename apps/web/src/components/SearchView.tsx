@@ -273,8 +273,17 @@ export default function SearchView(
     if (lo !== null && hi !== null && lo > hi) {
       setMinText(maxText);
       setMaxText(minText);
-      setBoundsNotice(`Amount bounds swapped: minimum ${maxText}, maximum ${minText}`);
+      announceSwap(`Amount bounds swapped: minimum ${maxText}, maximum ${minText}`);
     }
+  }
+
+  /**
+   * A live region announces *changes*, so re-setting the same string after an
+   * identical repeat swap would be silent. Alternating a zero-width marker
+   * keeps the spoken text identical while guaranteeing the DOM text differs.
+   */
+  function announceSwap(text: string) {
+    setBoundsNotice((previous) => (previous.endsWith("\u200B") ? text : `${text}\u200B`));
   }
 
   function toggleType(id: "EXPENSE" | "INCOME" | "TRANSFER") {
@@ -553,12 +562,15 @@ export default function SearchView(
               aria-label="Maximum amount"
             />
           </div>
-          <p role="status" aria-live="polite" className="sr-only">
-            {boundsNotice}
-          </p>
         </div>
         )}
       </div>
+
+      {/* Outside the collapsible panel: collapsing it blurs the input, which is
+          itself a swap trigger, and an unmounted live region announces nothing. */}
+      <p role="status" aria-live="polite" className="sr-only">
+        {boundsNotice}
+      </p>
 
       {/* Results */}
       <section className="px-4 pt-4">

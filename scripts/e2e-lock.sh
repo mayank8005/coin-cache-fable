@@ -47,9 +47,19 @@ try_claim() {
   # write; a failed write means we never owned it, not that the run should die.
   # The redirection must be inside the group — a failing open on the redirect
   # itself is reported before a trailing `2>/dev/null` takes effect.
-  if ! { printf '%s\n' "$$" > "$lock_pid_file"; } 2>/dev/null; then
-    lock_failure_reason="unwritable"
-    rmdir "$lock_dir" 2>/dev/null || true
+  #
+  # noclobber (in a subshell, so the option can't leak): if a pid file already
+  # exists at this path it belongs to somebody else — a stalled claim whose
+  # directory was recycled must never overwrite the new owner's proof.
+  if ! ( set -C; printf '%s\n' "$$" > "$lock_pid_file" ) 2>/dev/null; then
+    # mkdir had just succeeded, so the path is normally fine: the usual cause is
+    # contention. Only an unwritable directory is a real environment problem.
+    if [[ -d "$lock_dir" && ! -w "$lock_dir" ]]; then
+      lock_failure_reason="unwritable"
+      rmdir "$lock_dir" 2>/dev/null || true
+    else
+      lock_failure_reason="busy"
+    fi
     return 1
   fi
   sleep 0.2
@@ -78,16 +88,17 @@ sweep_stale_dirs() {
   local dir had_nullglob
   # Sourced library: leave the caller's glob options exactly as we found them,
   # and don't let `failglob` turn "no litter" into an error.
-  had_nullglob="$(shopt -p nullglob)"
+  had_nullglob="$(shopt -p nullglob || true)"
   shopt -s nullglob
-  if compgen -G "$lock_dir.stale.*" >/dev/null 2>&1; then
-    for dir in "$lock_dir".stale.*; do
-      [[ -d "$dir" ]] || continue
-      # Undeletable litter (foreign owner in a shared /tmp, read-only mode)
-      # must not print on every future run.
-      pid_is_live "$(read_owner_pid "$dir")" || rm -rf "$dir" 2>/dev/null || true
-    done
-  fi
+  # The prefix stays quoted so glob metacharacters in TMPDIR (a literal "[" is
+  # enough) can't turn the path itself into a pattern; nullglob covers the
+  # no-litter case, so no separate existence guard is needed.
+  for dir in "$lock_dir".stale.*; do
+    [[ -d "$dir" ]] || continue
+    # Undeletable litter (foreign owner in a shared /tmp, read-only mode) must
+    # not print on every future run.
+    pid_is_live "$(read_owner_pid "$dir")" || rm -rf "$dir" 2>/dev/null || true
+  done
   eval "$had_nullglob"
 }
 
@@ -123,7 +134,7 @@ acquire_lock() {
         lock_failure_reason="busy"
         return 1
       fi
-      rm -rf "$stale_dir"
+      rm -rf "$stale_dir" 2>/dev/null || true
     fi
   done
   return 1
