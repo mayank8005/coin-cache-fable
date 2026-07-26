@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { Entry, PlainAccount, PlainCategory, SearchResult } from "@/lib/data";
 import { SEARCH_PAGE_SIZE, SEARCH_RANGES, type SearchRange } from "@/lib/periods";
 import {
+  DEFAULT_SEARCH_BY,
   SEARCH_BY_FIELDS,
   isDefaultSearchBy,
   serializeSearchBy,
@@ -103,8 +104,6 @@ export default function SearchView(
   const [text, setText] = useState(props.q);
   const [minText, setMinText] = useState(props.min);
   const [maxText, setMaxText] = useState(props.max);
-  const skipFirst = useRef(true);
-  const resetting = useRef(false);
 
   const [recordDialog, setRecordDialog] = useState<Extract<Entry, { kind: "record" }> | null>(null);
   const [transferDialog, setTransferDialog] = useState<Extract<Entry, { kind: "transfer" }> | null>(
@@ -125,98 +124,117 @@ export default function SearchView(
     searchBy: props.searchBy,
   };
 
-  // Props only catch up after a server round-trip, so a filter change pushed in
-  // the last few hundred ms isn't visible in them yet. `pending` remembers what
-  // we last navigated to and is dropped as soon as the server state moves,
-  // whether that's our own push landing or a reset navigating elsewhere.
-  const pending = useRef<Params | null>(null);
-  const lastPropsUrl = useRef<string | null>(null);
-  const propsUrl = buildQuery(fromProps, props.page);
-  if (lastPropsUrl.current !== propsUrl) {
-    lastPropsUrl.current = propsUrl;
-    pending.current = null;
-  }
+  // Props only catch up after a server round-trip, so a filter change made in
+  // the last few hundred ms isn't visible in them yet. `pending` is what we
+  // last asked for; every filter read goes through it, and it is dropped once
+  // the server state settles on it (or moves somewhere else entirely).
+  const [pending, setPending] = useState<Params | null>(null);
+  // Mirrors the state for read-your-writes: two taps in the same tick both have
+  // to compose, and the second one runs before React has re-rendered.
+  const pendingRef = useRef<Params | null>(null);
   const propsRef = useRef(fromProps);
-  propsRef.current = fromProps;
-  const live = pending.current ?? fromProps;
+  const lastPropsKey = useRef<string | null>(null);
+  const propsKey = buildQuery(fromProps);
+  const live = pending ?? fromProps;
 
-  /**
-   * The newest params anyone has asked for. Read through refs rather than the
-   * render snapshot, so a debounced call scheduled before a chip toggle — or a
-   * second toggle fired before React re-renders — still sees the first one.
-   */
+  /** The newest params anyone has asked for — never a render-phase snapshot. */
   function liveParams(): Params {
-    return pending.current ?? propsRef.current;
+    return pendingRef.current ?? propsRef.current;
   }
+
+  function setLive(next: Params | null) {
+    pendingRef.current = next;
+    setPending(next);
+  }
+
+  // Reconcile the optimistic copy with the server on every commit: our push
+  // landed (settled), or something else navigated (moved) — either way props
+  // are authoritative again.
+  useEffect(() => {
+    propsRef.current = fromProps;
+    const moved = lastPropsKey.current !== null && lastPropsKey.current !== propsKey;
+    lastPropsKey.current = propsKey;
+    if (!pendingRef.current) return;
+    if (moved || buildQuery(pendingRef.current) === propsKey) setLive(null);
+  });
 
   // Any filter change goes back to page 1; only the pager passes `page`.
   function update(patch: Partial<Params> & { page?: number }) {
     const base = liveParams();
     const next: Params = {
-      // The text inputs are controlled locally, so their live value is `text`;
-      // the debounced caller passes all three explicitly anyway.
-      q: patch.q ?? text,
+      // Text state is never read here: it reaches the URL through the debounce
+      // (which passes all three explicitly), so a tap right after a reset can't
+      // resurrect text the reset just cleared.
+      q: patch.q ?? base.q,
       type: patch.type === undefined ? base.type : patch.type,
       range: patch.range ?? base.range,
       from: patch.from === undefined ? base.from : patch.from,
       to: patch.to === undefined ? base.to : patch.to,
-      min: patch.min ?? minText,
-      max: patch.max ?? maxText,
+      min: patch.min ?? base.min,
+      max: patch.max ?? base.max,
       categoryId: patch.categoryId === undefined ? base.categoryId : patch.categoryId,
       accountId: patch.accountId === undefined ? base.accountId : patch.accountId,
       searchBy: patch.searchBy ?? base.searchBy,
     };
-    pending.current = next;
+    setLive(next);
     const str = buildQuery(next, patch.page);
     // Jump back to the top when flipping pages; stay put while tweaking filters.
     router.replace(str ? `/search?${str}` : "/search", { scroll: Boolean(patch.page) });
   }
 
   // Debounced typing: text and amount bounds push into the URL after a pause.
+  // Pushing only when they differ from the live params keeps mount and reset
+  // from firing a redundant navigation, without ever swallowing a keystroke.
   useEffect(() => {
-    if (skipFirst.current) {
-      skipFirst.current = false;
-      return;
-    }
-    if (resetting.current) return;
-    const t = setTimeout(() => update({ q: text, min: minText, max: maxText }), 350);
+    const t = setTimeout(() => {
+      const base = liveParams();
+      if (
+        text.trim() === base.q.trim() &&
+        minText.trim() === base.min.trim() &&
+        maxText.trim() === base.max.trim()
+      )
+        return;
+      update({ q: text, min: minText, max: maxText });
+    }, 350);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, minText, maxText]);
+
+  /** Every filter back to its default — the shape both reset paths land on. */
+  function clearedParams(): Params {
+    return {
+      q: "",
+      type: null,
+      range: "month",
+      from: null,
+      to: null,
+      min: "",
+      max: "",
+      categoryId: null,
+      accountId: null,
+      searchBy: [...DEFAULT_SEARCH_BY],
+    };
+  }
+
+  function reset() {
+    setText("");
+    setMinText("");
+    setMaxText("");
+    // A concrete cleared copy rather than null: the chips read as cleared right
+    // away, and anything tapped before the round-trip lands composes on top of
+    // the cleared state instead of resurrecting the filters we just dropped.
+    setLive(clearedParams());
+    router.replace("/search", { scroll: false });
+  }
 
   // Filters only live within a search session: a fresh document load (refresh,
   // reopened PWA tab, direct link) that carries filter params starts clean.
   // This component stays mounted during in-session filtering, so the effect
   // fires only on genuine page loads.
   useEffect(() => {
-    if (window.location.search) {
-      resetting.current = true;
-      pending.current = null;
-      setText("");
-      setMinText("");
-      setMaxText("");
-      router.replace("/search", { scroll: false });
-    }
+    if (window.location.search) reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // The reset is done once the server round-trip lands with clean props;
-  // until then the debounce above must not push stale values back.
-  useEffect(() => {
-    if (
-      resetting.current &&
-      props.q === "" &&
-      props.type === null &&
-      props.range === "month" &&
-      props.categoryId === null &&
-      props.accountId === null &&
-      props.min === "" &&
-      props.max === "" &&
-      isDefaultSearchBy(props.searchBy)
-    ) {
-      resetting.current = false;
-    }
-  });
 
   // At least one field must stay on, so un-toggling the last one is a no-op
   // (the chip renders as aria-disabled to explain the dead click).
@@ -227,20 +245,26 @@ export default function SearchView(
     update({ searchBy: active ? current.filter((f) => f !== id) : [...current, id] });
   }
 
-  function clearAll() {
-    setText("");
-    setMinText("");
-    setMaxText("");
-    pending.current = null;
-    skipFirst.current = true; // the state resets above shouldn't re-trigger a push
-    router.replace("/search", { scroll: false });
+  function toggleType(id: "EXPENSE" | "INCOME" | "TRANSFER") {
+    const base = liveParams();
+    const next = base.type === id ? null : id;
+    // A category filter never matches transfers, so the two are exclusive.
+    update({ type: next, ...(next === "TRANSFER" ? { categoryId: null } : {}) });
+  }
+
+  function toggleCategory(id: string) {
+    const base = liveParams();
+    update({
+      categoryId: base.categoryId === id ? null : id,
+      ...(base.type === "TRANSFER" ? { type: null } : {}),
+    });
   }
 
   const activeAccounts = props.accounts.filter((a) => !a.archived);
   const visibleCategories = props.categories.filter(
     (c) =>
-      (!c.archived || c.id === props.categoryId) &&
-      (props.type === "EXPENSE" || props.type === "INCOME" ? c.type === props.type : true),
+      (!c.archived || c.id === live.categoryId) &&
+      (live.type === "EXPENSE" || live.type === "INCOME" ? c.type === live.type : true),
   );
 
   const totalPages = Math.max(1, Math.ceil(result.totalCount / SEARCH_PAGE_SIZE));
@@ -300,18 +324,18 @@ export default function SearchView(
             {SEARCH_RANGES.map((r) => (
               <Chip
                 key={r.id}
-                active={props.range === r.id}
+                active={live.range === r.id}
                 onClick={() => update({ range: r.id, from: null, to: null })}
               >
                 {r.label}
               </Chip>
             ))}
           </div>
-          {props.range === "custom" && (
+          {live.range === "custom" && (
             <div className="mt-2 flex items-center gap-2">
               <input
                 type="date"
-                value={props.from ?? ""}
+                value={live.from ?? ""}
                 max={props.todayIso}
                 onChange={(e) => update({ from: e.target.value || null })}
                 className="h-10 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 text-sm text-gray-700 outline-none focus:border-brand"
@@ -320,7 +344,7 @@ export default function SearchView(
               <span className="text-xs text-gray-400">to</span>
               <input
                 type="date"
-                value={props.to ?? ""}
+                value={live.to ?? ""}
                 onChange={(e) => update({ to: e.target.value || null })}
                 className="h-10 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 text-sm text-gray-700 outline-none focus:border-brand"
                 aria-label="To date"
@@ -384,14 +408,8 @@ export default function SearchView(
             {TYPES.map((t) => (
               <Chip
                 key={t.id}
-                active={props.type === t.id}
-                onClick={() =>
-                  update({
-                    type: props.type === t.id ? null : t.id,
-                    // a category filter never matches transfers
-                    ...(t.id === "TRANSFER" && props.type !== t.id ? { categoryId: null } : {}),
-                  })
-                }
+                active={live.type === t.id}
+                onClick={() => toggleType(t.id)}
               >
                 {t.label}
               </Chip>
@@ -407,13 +425,8 @@ export default function SearchView(
             {visibleCategories.map((c) => (
               <Chip
                 key={c.id}
-                active={props.categoryId === c.id}
-                onClick={() =>
-                  update({
-                    categoryId: props.categoryId === c.id ? null : c.id,
-                    ...(props.type === "TRANSFER" ? { type: null } : {}),
-                  })
-                }
+                active={live.categoryId === c.id}
+                onClick={() => toggleCategory(c.id)}
               >
                 {c.icon} {c.name}
               </Chip>
@@ -429,8 +442,10 @@ export default function SearchView(
               {activeAccounts.map((a) => (
                 <Chip
                   key={a.id}
-                  active={props.accountId === a.id}
-                  onClick={() => update({ accountId: props.accountId === a.id ? null : a.id })}
+                  active={live.accountId === a.id}
+                  onClick={() =>
+                    update({ accountId: liveParams().accountId === a.id ? null : a.id })
+                  }
                 >
                   {a.icon} {a.name}
                 </Chip>
@@ -485,7 +500,7 @@ export default function SearchView(
               <span className="font-semibold text-income">{fmt(result.incomeMinor, true)}</span>
             )}
             {hasFilter && (
-              <button onClick={clearAll} className="font-medium text-brand-dark underline">
+              <button onClick={reset} className="font-medium text-brand-dark underline">
                 Clear all
               </button>
             )}

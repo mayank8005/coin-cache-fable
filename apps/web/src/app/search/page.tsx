@@ -14,6 +14,20 @@ export const dynamic = "force-dynamic";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * A real calendar date, not just the right shape: "2026-13-45" and "2026-02-30"
+ * both pass the regex but blow up (or silently roll over) once they reach
+ * `new Date()` or Prisma.
+ */
+function parseIsoDate(v: unknown): string | null {
+  if (typeof v !== "string" || !ISO_DATE.test(v)) return null;
+  const [y, m, d] = v.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const roundTrips =
+    date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+  return roundTrips ? v : null;
+}
+
 function nextDay(iso: string): string {
   const d = new Date(iso + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() + 1);
@@ -37,8 +51,8 @@ export default async function SearchPage({
     : "month") as SearchRange;
   const categoryId = typeof sp.category === "string" && sp.category !== "" ? sp.category : null;
   const accountId = typeof sp.account === "string" && sp.account !== "" ? sp.account : null;
-  let from = typeof sp.from === "string" && ISO_DATE.test(sp.from) ? sp.from : null;
-  let to = typeof sp.to === "string" && ISO_DATE.test(sp.to) ? sp.to : null;
+  let from = parseIsoDate(sp.from);
+  let to = parseIsoDate(sp.to);
   if (from && to && from > to) [from, to] = [to, from];
   const searchBy = parseSearchBy(sp.by);
   let minMinor = parseAmountMinor(sp.min);

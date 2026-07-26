@@ -319,3 +319,86 @@ test("matches transfers on exact amount and dates their rows", async ({ page }) 
     page.getByText(`${shortDate(dates.transferOnly)} · Move to savings`),
   ).toBeVisible();
 });
+
+/**
+ * Widen the server round-trip so client state races are reproducible: only the
+ * RSC fetches are held back, never the document itself.
+ */
+async function delayNavigations(page: Page, ms: number) {
+  await page.route(/\/search(\?|$)/, async (route) => {
+    if (route.request().resourceType() !== "document") {
+      await new Promise((resolve) => setTimeout(resolve, ms));
+    }
+    await route.continue();
+  });
+}
+
+test("pushes text typed while a fresh load is still resetting filters", async ({ page }) => {
+  await delayNavigations(page, 900);
+  await page.goto("/search?q=Bus&range=all");
+
+  // The mount reset is in flight; these keystrokes must not be swallowed.
+  await searchBox(page).fill("Lunch");
+  await expect(page).toHaveURL(/q=Lunch/);
+  await expect(page.getByText("Lunch groceries")).toBeVisible();
+});
+
+test("keeps the search box alive after a chip tapped during the reset", async ({ page }) => {
+  await delayNavigations(page, 900);
+  await page.goto("/search?q=Bus&range=all");
+
+  await page.getByRole("button", { name: "All time" }).click();
+  await searchBox(page).fill("Lunch");
+
+  await expect(page).toHaveURL(/q=Lunch/);
+  await expect(page).toHaveURL(/range=all/);
+  await expect(page.getByText("Lunch groceries")).toBeVisible();
+});
+
+test("never combines the Transfers type with a category", async ({ page }) => {
+  await delayNavigations(page, 900);
+  await page.goto("/search");
+  await openAdvanced(page);
+
+  await page.getByRole("button", { name: "Transfers", exact: true }).click();
+  // Any unrelated re-render before the round-trip lands (here: collapsing and
+  // re-opening the panel) republishes the optimistic Transfers state to the
+  // handlers. Both taps have to agree on what's current, or the URL ends up
+  // asking for a transfer with a category — a combination that matches nothing.
+  const disclosure = page.getByRole("button", { name: /Advanced filters/ });
+  await disclosure.click();
+  await disclosure.click();
+  await page.getByRole("button", { name: "🍜 Food", exact: true }).click();
+
+  await expect(page).toHaveURL(/category=/);
+  await expect(page).not.toHaveURL(/type=TRANSFER/);
+  await expect(page.getByText("Lunch groceries")).toBeVisible();
+});
+
+test("keeps filters cleared when a chip is tapped right after Clear all", async ({ page }) => {
+  await allTime(page);
+  await openAdvanced(page);
+  await page.getByRole("button", { name: "Expenses", exact: true }).click();
+  await searchBox(page).fill("groceries");
+  await expect(page).toHaveURL(/q=groceries/);
+  await expect(page).toHaveURL(/type=EXPENSE/);
+
+  await delayNavigations(page, 900);
+  await page.getByRole("button", { name: "Clear all" }).click();
+  await page.getByRole("button", { name: "Last month" }).click();
+
+  // The tap composes on the cleared state, so nothing else comes back with it.
+  await expect(page).toHaveURL(/\/search\?range=lastmonth$/);
+});
+
+test("renders rather than crashing on invalid date params", async ({ page }) => {
+  for (const params of [
+    "range=custom&to=2026-13-45",
+    "range=custom&from=2026-01-32",
+    "range=custom&from=2026-02-30&to=2026-06-31",
+  ]) {
+    const response = await page.goto(`/search?${params}`);
+    expect(response?.status()).toBe(200);
+    await expect(searchBox(page)).toBeVisible();
+  }
+});
