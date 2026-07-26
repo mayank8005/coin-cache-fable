@@ -15,7 +15,19 @@ import TransferDialog from "./TransferDialog";
  * scrolling stays native. Ignores touches starting in the iOS edge-swipe zone. */
 function useHorizontalSwipe(enabled: boolean, onSwipe: (dir: 1 | -1) => void) {
   const start = useRef<{ x: number; y: number; t: number; axis: "x" | "y" | null } | null>(null);
+  /* -Infinity, not 0: timeStamp counts from document load, so 0 would swallow
+   * every real click in the first 400ms after a full page load. */
+  const swipedAt = useRef(-Infinity);
   return {
+    /* Swallow the ghost click some browsers synthesize after a fast drag, before
+     * it reaches a row/toggle inside. React synthetic events expose the native
+     * timeStamp, so touch and mouse events share one clock. */
+    onClickCapture(e: React.MouseEvent) {
+      if (e.timeStamp - swipedAt.current < 400) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    },
     onTouchStart(e: React.TouchEvent) {
       start.current = null;
       if (!enabled || e.touches.length !== 1) return;
@@ -42,7 +54,10 @@ function useHorizontalSwipe(enabled: boolean, onSwipe: (dir: 1 | -1) => void) {
       if (!touch) return;
       const dx = touch.clientX - s.x;
       const elapsed = e.timeStamp - s.t;
-      if (Math.abs(dx) > 50 || (Math.abs(dx) > 30 && elapsed < 250)) onSwipe(dx < 0 ? 1 : -1);
+      if (Math.abs(dx) > 50 || (Math.abs(dx) > 30 && elapsed < 250)) {
+        swipedAt.current = e.timeStamp;
+        onSwipe(dx < 0 ? 1 : -1);
+      }
     },
   };
 }
@@ -93,21 +108,30 @@ export default function Dashboard(props: {
     ? lastAccountId
     : null;
 
+  /* Props lag behind while a nav transition is pending, so rapid repeat-navigation
+   * would rebase off a stale offset. Track the last requested one until it commits,
+   * and read it at event time — renders don't keep up with back-to-back clicks. */
+  const requestedOffset = useRef<number | null>(null);
+  if (!isPending) requestedOffset.current = null;
+
   function nav(next: { period?: Period; offset?: number; account?: string | null }) {
     const q = new URLSearchParams();
     const period = next.period ?? props.period;
-    const offset = next.offset ?? props.offset;
+    const offset = next.offset ?? requestedOffset.current ?? props.offset;
     const account = next.account === undefined ? props.accountId : next.account;
     if (period !== "month") q.set("period", period);
     if (offset !== 0) q.set("offset", String(offset));
     if (account) q.set("account", account);
     const s = q.toString();
+    requestedOffset.current = offset;
     startTransition(() => router.push(s ? `/?${s}` : "/"));
   }
 
-  const swipe = useHorizontalSwipe(props.period !== "all", (dir) =>
-    nav({ offset: props.offset + dir }),
-  );
+  function stepOffset(dir: 1 | -1) {
+    nav({ offset: (requestedOffset.current ?? props.offset) + dir });
+  }
+
+  const swipe = useHorizontalSwipe(props.period !== "all", stepOffset);
 
   const netMinor = data.incomeMinor - data.expenseMinor;
 
@@ -182,7 +206,7 @@ export default function Dashboard(props: {
         {props.period !== "all" && (
           <div className="mt-2 flex items-center justify-between">
             <button
-              onClick={() => nav({ offset: props.offset - 1 })}
+              onClick={() => stepOffset(-1)}
               className="flex h-11 w-11 items-center justify-center rounded-full text-2xl text-gray-500 active:bg-gray-200"
               aria-label="Previous period"
             >
@@ -190,7 +214,7 @@ export default function Dashboard(props: {
             </button>
             <span className="text-sm font-semibold text-gray-700">{data.rangeLabel}</span>
             <button
-              onClick={() => nav({ offset: props.offset + 1 })}
+              onClick={() => stepOffset(1)}
               className="flex h-11 w-11 items-center justify-center rounded-full text-2xl text-gray-500 active:bg-gray-200"
               aria-label="Next period"
             >
