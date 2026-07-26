@@ -16,8 +16,11 @@ export function formatMoney(
   return minor < 0 ? "−" + s : s;
 }
 
-/** Plain decimal only — `Number()` would also swallow "0x10", "1e3" and "Infinity". */
-const PLAIN_DECIMAL = /^\d+(\.\d+)?$/;
+/**
+ * What `<input type="number">` can hand us — "250", ".5", "1e3" — and nothing
+ * else: `Number()` would otherwise also swallow "0x10", "0b11" and "Infinity".
+ */
+const NUMBER_INPUT_VALUE = /^(\d+(\.\d+)?|\.\d+)([eE][+-]?\d+)?$/;
 
 /** Mirrors `amountSchema`'s cap in actions.ts: nothing larger can be stored. */
 const MAX_AMOUNT_MINOR = 9_000_000_000_000;
@@ -34,7 +37,7 @@ const MAX_AMOUNT_MINOR = 9_000_000_000_000;
 export function parseAmountMinor(v: unknown): number | null {
   if (typeof v !== "string") return null;
   const text = v.trim();
-  if (!PLAIN_DECIMAL.test(text)) return null;
+  if (!NUMBER_INPUT_VALUE.test(text)) return null;
   const minor = Math.round(Number(text) * 100);
   if (!Number.isSafeInteger(minor) || minor > MAX_AMOUNT_MINOR) return null;
   return minor;

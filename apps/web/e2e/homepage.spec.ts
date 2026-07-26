@@ -36,7 +36,9 @@ let dates: SeedDates;
 test.beforeEach(async ({ page }) => {
   dates = await seedDashboard();
   await signIn(page);
-  await page.goto("/?period=all");
+  // The dashboard has no all-time tab; these assertions are month-scoped, and
+  // the fixtures keep every seeded date inside the current month.
+  await page.goto("/");
   await expect(page.getByRole("heading", { name: "Records" })).toBeVisible();
 });
 

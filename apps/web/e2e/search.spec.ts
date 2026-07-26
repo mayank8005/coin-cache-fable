@@ -4,6 +4,7 @@ import {
   seedDashboard,
   TEST_EMAIL,
   TEST_PASSWORD,
+  seedExtraRecords,
   type SeedDates,
 } from "./fixtures";
 
@@ -234,12 +235,42 @@ test("filters on a valid minimum and survives an out-of-range one", async ({ pag
   await expect(page.getByText("Old rent")).toBeVisible();
   await expect(page.getByText("Monthly salary")).toBeVisible();
 
-  // Bigger than any storable amount: the bound is dropped rather than handed to
-  // Prisma as a Float, which used to blow up the whole page.
+  // Bigger than any storable amount, so the bound is dropped instead of being
+  // handed to Prisma as a Float: every entry comes back, and no error boundary.
   await page.getByLabel("Minimum amount").fill("90071992547410");
   await expect(page).toHaveURL(/min=90071992547410/);
-  await expect(page.getByRole("heading", { name: /^\d+ results?$/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "8 results", exact: true })).toBeVisible();
   await expect(page.getByText("Old rent")).toBeVisible();
+  await expect(page.getByText("Something went wrong")).toHaveCount(0);
+});
+
+test("accepts the amount formats a number input can produce", async ({ page }) => {
+  await allTime(page);
+  await openAdvanced(page);
+
+  // Exponent and bare-fraction notation are both valid <input type="number">
+  // values, so they have to filter rather than be thrown away.
+  await page.getByLabel("Minimum amount").fill("1e3");
+  await expect(page.getByRole("heading", { name: "1 result", exact: true })).toBeVisible();
+  await expect(page.getByText("Old rent")).toBeVisible();
+
+  await page.getByLabel("Minimum amount").fill(".5");
+  await expect(page.getByRole("heading", { name: "8 results", exact: true })).toBeVisible();
+});
+
+test("drops a category that the newly picked type can never match", async ({ page }) => {
+  await allTime(page);
+  await openAdvanced(page);
+
+  await page.getByRole("button", { name: "🍜 Food", exact: true }).click();
+  await expect(page).toHaveURL(/category=/);
+
+  // Food is an expense category: keeping it under Income would filter with a
+  // chip that the category row no longer shows.
+  await page.getByRole("button", { name: "Income", exact: true }).click();
+  await expect(page).toHaveURL(/type=INCOME/);
+  await expect(page).not.toHaveURL(/category=/);
+  await expect(page.getByText("Monthly salary")).toBeVisible();
 });
 
 test("keeps a collapsed month card collapsed across filter changes", async ({ page }) => {
@@ -276,8 +307,9 @@ test("composes two rapid chip toggles instead of overwriting", async ({ page }) 
   await allTime(page);
   await openAdvanced(page);
 
-  // Back-to-back, faster than the server round-trip: the second toggle must
-  // build on the first, not on the state the first started from.
+  // Back-to-back, faster than the server round-trip: the second toggle reads
+  // the params the first one asked for, not the ones still coming back from
+  // the server, so the two compose instead of overwriting each other.
   await page.getByRole("button", { name: "Category", exact: true }).click();
   await page.getByRole("button", { name: "Account", exact: true }).click();
 
@@ -396,9 +428,25 @@ test("renders rather than crashing on invalid date params", async ({ page }) => 
     "range=custom&to=2026-13-45",
     "range=custom&from=2026-01-32",
     "range=custom&from=2026-02-30&to=2026-06-31",
+    // toISOString() renders year 10000 as "+010000-…", which Prisma rejects.
+    "range=custom&to=9999-12-31",
   ]) {
     const response = await page.goto(`/search?${params}`);
     expect(response?.status()).toBe(200);
     await expect(searchBox(page)).toBeVisible();
   }
+});
+
+test("advances two pages when Next is tapped twice", async ({ page }) => {
+  await seedExtraRecords(401);
+  await allTime(page);
+  await expect(page.getByText("Page 1 of 3")).toBeVisible();
+
+  await delayNavigations(page, 900);
+  const next = page.getByRole("button", { name: "Next ›" });
+  await next.click();
+  await next.click();
+
+  await expect(page).toHaveURL(/page=3/);
+  await expect(page.getByText("Page 3 of 3")).toBeVisible();
 });

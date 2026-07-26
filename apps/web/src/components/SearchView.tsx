@@ -12,7 +12,7 @@ import {
   serializeSearchBy,
   type SearchByField,
 } from "@/lib/search";
-import { formatMoney } from "@/lib/money";
+import { formatMoney, parseAmountMinor } from "@/lib/money";
 import EntryList from "./EntryList";
 import RecordDialog from "./RecordDialog";
 import TransferDialog from "./TransferDialog";
@@ -34,6 +34,8 @@ type Params = {
   categoryId: string | null;
   accountId: string | null;
   searchBy: SearchByField[];
+  /** Part of the optimistic set too, so a double-tap on the pager composes. */
+  page: number;
 };
 
 function Chip(props: {
@@ -60,7 +62,7 @@ function Chip(props: {
   );
 }
 
-function buildQuery(p: Params, page?: number): string {
+function buildQuery(p: Params): string {
   const s = new URLSearchParams();
   if (p.q.trim()) s.set("q", p.q.trim());
   if (p.type) s.set("type", p.type);
@@ -74,7 +76,7 @@ function buildQuery(p: Params, page?: number): string {
   if (p.categoryId) s.set("category", p.categoryId);
   if (p.accountId) s.set("account", p.accountId);
   if (!isDefaultSearchBy(p.searchBy)) s.set("by", serializeSearchBy(p.searchBy));
-  if (page && page > 1) s.set("page", String(page));
+  if (p.page > 1) s.set("page", String(p.page));
   return s.toString();
 }
 
@@ -88,7 +90,6 @@ function RowLabel(props: { children: React.ReactNode }) {
 
 export default function SearchView(
   props: Params & {
-    page: number;
     result: SearchResult;
     accounts: PlainAccount[];
     categories: PlainCategory[];
@@ -122,6 +123,7 @@ export default function SearchView(
     categoryId: props.categoryId,
     accountId: props.accountId,
     searchBy: props.searchBy,
+    page: props.page,
   };
 
   // Props only catch up after a server round-trip, so a filter change made in
@@ -159,7 +161,7 @@ export default function SearchView(
   });
 
   // Any filter change goes back to page 1; only the pager passes `page`.
-  function update(patch: Partial<Params> & { page?: number }) {
+  function update(patch: Partial<Params>) {
     const base = liveParams();
     const next: Params = {
       // Text state is never read here: it reaches the URL through the debounce
@@ -175,9 +177,10 @@ export default function SearchView(
       categoryId: patch.categoryId === undefined ? base.categoryId : patch.categoryId,
       accountId: patch.accountId === undefined ? base.accountId : patch.accountId,
       searchBy: patch.searchBy ?? base.searchBy,
+      page: patch.page ?? 1,
     };
     setLive(next);
-    const str = buildQuery(next, patch.page);
+    const str = buildQuery(next);
     // Jump back to the top when flipping pages; stay put while tweaking filters.
     router.replace(str ? `/search?${str}` : "/search", { scroll: Boolean(patch.page) });
   }
@@ -213,6 +216,7 @@ export default function SearchView(
       categoryId: null,
       accountId: null,
       searchBy: [...DEFAULT_SEARCH_BY],
+      page: 1,
     };
   }
 
@@ -248,8 +252,14 @@ export default function SearchView(
   function toggleType(id: "EXPENSE" | "INCOME" | "TRANSFER") {
     const base = liveParams();
     const next = base.type === id ? null : id;
-    // A category filter never matches transfers, so the two are exclusive.
-    update({ type: next, ...(next === "TRANSFER" ? { categoryId: null } : {}) });
+    const selected = props.categories.find((c) => c.id === base.categoryId);
+    // A category filter never matches transfers, and an expense category never
+    // matches income: either way the chip would vanish from the row below while
+    // still filtering, leaving no way to switch it off.
+    const dropCategory =
+      next === "TRANSFER" ||
+      ((next === "EXPENSE" || next === "INCOME") && selected != null && selected.type !== next);
+    update({ type: next, ...(dropCategory ? { categoryId: null } : {}) });
   }
 
   function toggleCategory(id: string) {
@@ -268,7 +278,7 @@ export default function SearchView(
   );
 
   const totalPages = Math.max(1, Math.ceil(result.totalCount / SEARCH_PAGE_SIZE));
-  const page = Math.min(props.page, totalPages);
+  const page = Math.min(live.page, totalPages);
   const firstShown = result.entries.length === 0 ? 0 : (page - 1) * SEARCH_PAGE_SIZE + 1;
   const lastShown = (page - 1) * SEARCH_PAGE_SIZE + result.entries.length;
 
@@ -278,7 +288,9 @@ export default function SearchView(
     (live.type !== null ? 1 : 0) +
     (live.categoryId !== null ? 1 : 0) +
     (live.accountId !== null ? 1 : 0) +
-    (live.min.trim() !== "" || live.max.trim() !== "" ? 1 : 0) +
+    // Only bounds the server will actually apply — an unparseable one is
+    // dropped there, and a badge for a filter that isn't filtering is a lie.
+    (parseAmountMinor(live.min) !== null || parseAmountMinor(live.max) !== null ? 1 : 0) +
     (isDefaultSearchBy(live.searchBy) ? 0 : 1);
   const hasFilter = advCount > 0 || live.range !== "month" || live.q.trim() !== "";
 
@@ -345,6 +357,7 @@ export default function SearchView(
               <input
                 type="date"
                 value={live.to ?? ""}
+                max={props.todayIso}
                 onChange={(e) => update({ to: e.target.value || null })}
                 className="h-10 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 text-sm text-gray-700 outline-none focus:border-brand"
                 aria-label="To date"
@@ -517,7 +530,9 @@ export default function SearchView(
             // Month key is "YYYY-MM"; the home page takes a relative offset.
             const [y, m] = key.split("-").map(Number);
             const [ty, tm] = props.todayIso.split("-").map(Number);
-            const offset = (y - ty) * 12 + (m - tm);
+            // The dashboard clamps the same way; an unclamped offset would
+            // silently land on a different month.
+            const offset = Math.max(-1200, Math.min(1200, (y - ty) * 12 + (m - tm)));
             return (
               <Link
                 href={offset === 0 ? "/" : `/?offset=${offset}`}
@@ -552,7 +567,7 @@ export default function SearchView(
         {totalPages > 1 && (
           <div className="mt-3 flex items-center justify-between">
             <button
-              onClick={() => update({ page: page - 1 })}
+              onClick={() => update({ page: Math.max(1, liveParams().page - 1) })}
               disabled={page <= 1}
               className="flex h-11 items-center rounded-lg border border-gray-200 bg-white px-5 text-sm font-medium text-gray-600 active:bg-gray-100 disabled:opacity-40"
             >
@@ -562,7 +577,7 @@ export default function SearchView(
               Page {page} of {totalPages}
             </span>
             <button
-              onClick={() => update({ page: page + 1 })}
+              onClick={() => update({ page: liveParams().page + 1 })}
               disabled={page >= totalPages}
               className="flex h-11 items-center rounded-lg border border-gray-200 bg-white px-5 text-sm font-medium text-gray-600 active:bg-gray-100 disabled:opacity-40"
             >

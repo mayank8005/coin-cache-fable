@@ -217,6 +217,30 @@ export async function seedDashboard(): Promise<SeedDates> {
   return dates;
 }
 
+/**
+ * Bulk filler for pagination tests: one extra page-worth of cheap records in
+ * the current month. Call after `seedDashboard`, before the page navigates.
+ */
+export async function seedExtraRecords(count: number): Promise<void> {
+  const user = await prisma.user.findUniqueOrThrow({ where: { email: TEST_EMAIL } });
+  const [account, category] = await Promise.all([
+    prisma.account.findFirstOrThrow({ where: { userId: user.id, name: "Cash" } }),
+    prisma.category.findFirstOrThrow({ where: { userId: user.id, name: "Food" } }),
+  ]);
+  const today = todayInIndia();
+  await prisma.record.createMany({
+    data: Array.from({ length: count }, (_, i) => ({
+      userId: user.id,
+      type: "EXPENSE" as const,
+      amountMinor: 100 + i,
+      date: dbDate(today),
+      note: `Bulk ${i}`,
+      accountId: account.id,
+      categoryId: category.id,
+    })),
+  });
+}
+
 export async function closeTestDatabase() {
   await prisma.$disconnect();
 }
