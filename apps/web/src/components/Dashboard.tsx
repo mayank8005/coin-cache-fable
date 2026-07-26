@@ -21,7 +21,9 @@ function useHorizontalSwipe(enabled: boolean, onSwipe: (dir: 1 | -1) => void) {
   return {
     /* Swallow the ghost click some browsers synthesize after a fast drag, before
      * it reaches a row/toggle inside. React synthetic events expose the native
-     * timeStamp, so touch and mouse events share one clock. */
+     * timeStamp, so touch and mouse events share one clock. A new touchstart
+     * re-arms clicks, so only the synthesized click — which has no touchstart of
+     * its own — is swallowed, never a genuine tap made inside the window. */
     onClickCapture(e: React.MouseEvent) {
       if (e.timeStamp - swipedAt.current < 400) {
         e.preventDefault();
@@ -29,6 +31,7 @@ function useHorizontalSwipe(enabled: boolean, onSwipe: (dir: 1 | -1) => void) {
       }
     },
     onTouchStart(e: React.TouchEvent) {
+      swipedAt.current = -Infinity;
       start.current = null;
       if (!enabled || e.touches.length !== 1) return;
       const touch = e.touches[0];
@@ -109,26 +112,34 @@ export default function Dashboard(props: {
     : null;
 
   /* Props lag behind while a nav transition is pending, so rapid repeat-navigation
-   * would rebase off a stale offset. Track the last requested one until it commits,
-   * and read it at event time — renders don't keep up with back-to-back clicks. */
-  const requestedOffset = useRef<number | null>(null);
-  if (!isPending) requestedOffset.current = null;
+   * would rebase off stale values. Track the whole pending navigation intent
+   * (period/offset/account) until it commits, and read it at event time — renders
+   * don't keep up with back-to-back inputs. */
+  const requestedNav = useRef<{ period: Period; offset: number; account: string | null } | null>(
+    null,
+  );
+  if (!isPending) requestedNav.current = null;
 
   function nav(next: { period?: Period; offset?: number; account?: string | null }) {
     const q = new URLSearchParams();
-    const period = next.period ?? props.period;
-    const offset = next.offset ?? requestedOffset.current ?? props.offset;
-    const account = next.account === undefined ? props.accountId : next.account;
+    const base = requestedNav.current ?? {
+      period: props.period,
+      offset: props.offset,
+      account: props.accountId,
+    };
+    const period = next.period ?? base.period;
+    const offset = next.offset ?? base.offset;
+    const account = next.account === undefined ? base.account : next.account;
     if (period !== "month") q.set("period", period);
     if (offset !== 0) q.set("offset", String(offset));
     if (account) q.set("account", account);
     const s = q.toString();
-    requestedOffset.current = offset;
+    requestedNav.current = { period, offset, account };
     startTransition(() => router.push(s ? `/?${s}` : "/"));
   }
 
   function stepOffset(dir: 1 | -1) {
-    nav({ offset: (requestedOffset.current ?? props.offset) + dir });
+    nav({ offset: (requestedNav.current ?? props).offset + dir });
   }
 
   const swipe = useHorizontalSwipe(props.period !== "all", stepOffset);
