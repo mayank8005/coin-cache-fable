@@ -7,7 +7,7 @@ import {
   getSettings,
   userCount,
 } from "@/lib/data";
-import { todayInTz, type Period, PERIODS } from "@/lib/periods";
+import { todayInTz, MAX_PERIOD_OFFSET, type Period, PERIODS } from "@/lib/periods";
 import Dashboard from "@/components/Dashboard";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,10 @@ export default async function HomePage({
   const sp = await searchParams;
 
   const period = (PERIODS.some((p) => p.id === sp.period) ? sp.period : "month") as Period;
-  const offset = Math.max(-1200, Math.min(1200, parseInt(String(sp.offset ?? "0"), 10) || 0));
+  const offset = Math.max(
+    -MAX_PERIOD_OFFSET,
+    Math.min(MAX_PERIOD_OFFSET, parseInt(String(sp.offset ?? "0"), 10) || 0),
+  );
   const accountId = typeof sp.account === "string" && sp.account !== "" ? sp.account : null;
 
   const settings = await getSettings(user.id);

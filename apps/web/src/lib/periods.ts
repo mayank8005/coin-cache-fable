@@ -11,6 +11,9 @@ export const PERIODS: { id: Period; label: string }[] = [
 
 export const SEARCH_PAGE_SIZE = 200;
 
+/** How far the dashboard will step from the current period, in either direction. */
+export const MAX_PERIOD_OFFSET = 1200;
+
 export type SearchRange = "month" | "lastmonth" | "3m" | "year" | "all" | "custom";
 
 export const SEARCH_RANGES: { id: SearchRange; label: string }[] = [

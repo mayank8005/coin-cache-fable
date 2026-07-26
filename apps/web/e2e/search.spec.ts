@@ -5,6 +5,8 @@ import {
   TEST_EMAIL,
   TEST_PASSWORD,
   seedExtraRecords,
+  breakTimezone,
+  restoreTimezone,
   type SeedDates,
 } from "./fixtures";
 
@@ -65,8 +67,6 @@ async function openAdvanced(page: Page) {
 }
 
 let dates: SeedDates;
-
-test.describe.configure({ mode: "serial" });
 
 test.beforeEach(async ({ page }) => {
   dates = await seedDashboard();
@@ -254,8 +254,11 @@ test("accepts the amount formats a number input can produce", async ({ page }) =
   await expect(page.getByRole("heading", { name: "1 result", exact: true })).toBeVisible();
   await expect(page.getByText("Old rent")).toBeVisible();
 
-  await page.getByLabel("Minimum amount").fill(".5");
-  await expect(page.getByRole("heading", { name: "8 results", exact: true })).toBeVisible();
+  // ".5" as a maximum: 50 minor is below every seeded amount, so a bound that
+  // silently failed to parse would show all 8 entries instead of none.
+  await page.getByLabel("Minimum amount").fill("");
+  await page.getByLabel("Maximum amount").fill(".5");
+  await expect(page.getByRole("heading", { name: "0 results", exact: true })).toBeVisible();
 });
 
 test("drops a category that the newly picked type can never match", async ({ page }) => {
@@ -449,4 +452,86 @@ test("advances two pages when Next is tapped twice", async ({ page }) => {
 
   await expect(page).toHaveURL(/page=3/);
   await expect(page.getByText("Page 3 of 3")).toBeVisible();
+});
+
+test("keeps every row reachable exactly once across pages", async ({ page }) => {
+  await seedExtraRecords(401);
+
+  // Fetched rather than clicked: a fresh document load wipes filter params, so
+  // deep pages are only addressable through the server directly.
+  const perPage: Set<string>[] = [];
+  for (const n of [1, 2, 3]) {
+    const response = await page.request.get(`/search?range=all&page=${n}`);
+    expect(response.status()).toBe(200);
+    const html = await response.text();
+    // Anchored to the rendered subtitle so the inlined flight payload, which
+    // repeats every note, can't inflate the counts.
+    perPage.push(new Set([...html.matchAll(/· (Bulk \d+)<\/div>/g)].map((m) => m[1])));
+  }
+
+  const union = new Set(perPage.flatMap((set) => [...set]));
+  // Disjoint pages (no row served twice) covering every seeded row.
+  expect(perPage.reduce((sum, set) => sum + set.size, 0)).toBe(401);
+  expect(union.size).toBe(401);
+});
+
+test("clamps a page past the end to the last real page", async ({ page }) => {
+  const response = await page.request.get("/search?range=all&page=1000");
+  expect(response.status()).toBe(200);
+  const html = await response.text();
+
+  expect(html).toContain("Old rent");
+  expect(html).not.toContain("Nothing matches");
+});
+
+test("counts only amount bounds the server can apply", async ({ page }) => {
+  await allTime(page);
+  await openAdvanced(page);
+
+  await page.getByLabel("Minimum amount").fill("-5");
+  await expect(page).toHaveURL(/min=-5/);
+  // Unparseable: filters nothing, so it must not claim a badge — but it still
+  // counts as an attempt, so Clear all has to be reachable.
+  const badge = page.getByRole("button", { name: /Advanced filters/ }).locator("span.bg-brand");
+  await expect(badge).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Clear all" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "8 results", exact: true })).toBeVisible();
+
+  await page.getByLabel("Minimum amount").fill("50");
+  await expect(badge).toHaveText("1");
+});
+
+test("shows the error boundary and recovers once the data is sound", async ({ page }) => {
+  await breakTimezone();
+  await page.goto("/search");
+
+  await expect(page.getByRole("heading", { name: "Something went wrong" })).toBeVisible();
+  const retry = page.getByRole("button", { name: "Try again" });
+  await expect(retry).toBeVisible();
+  // The digest is what ties a user report to a server log line.
+  await expect(page.getByText(/^Reference: \d+$/)).toBeVisible();
+
+  // Retrying while still broken re-renders the boundary rather than a blank page.
+  await retry.click();
+  await expect(page.getByRole("heading", { name: "Something went wrong" })).toBeVisible();
+
+  await restoreTimezone();
+  await retry.click();
+  await expect(searchBox(page)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Something went wrong" })).toHaveCount(0);
+});
+
+test("never shows a result range beyond the rows on screen", async ({ page }) => {
+  await seedExtraRecords(401);
+  await allTime(page);
+  await expect(page.getByRole("heading", { name: "1–200 of 409" })).toBeVisible();
+
+  await delayNavigations(page, 900);
+  await page.getByRole("button", { name: "Next ›" }).click();
+
+  // Mid-flight the pager may read "Page 2", but the range line describes the
+  // rows actually rendered — which are still page 1's.
+  await expect(page.getByText("Page 2 of 3")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "1–200 of 409" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "201–400 of 409" })).toBeVisible();
 });

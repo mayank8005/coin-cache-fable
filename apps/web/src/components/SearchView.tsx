@@ -4,7 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Entry, PlainAccount, PlainCategory, SearchResult } from "@/lib/data";
-import { SEARCH_PAGE_SIZE, SEARCH_RANGES, type SearchRange } from "@/lib/periods";
+import {
+  MAX_PERIOD_OFFSET,
+  SEARCH_PAGE_SIZE,
+  SEARCH_RANGES,
+  type SearchRange,
+} from "@/lib/periods";
 import {
   DEFAULT_SEARCH_BY,
   SEARCH_BY_FIELDS,
@@ -279,8 +284,19 @@ export default function SearchView(
 
   const totalPages = Math.max(1, Math.ceil(result.totalCount / SEARCH_PAGE_SIZE));
   const page = Math.min(live.page, totalPages);
-  const firstShown = result.entries.length === 0 ? 0 : (page - 1) * SEARCH_PAGE_SIZE + 1;
-  const lastShown = (page - 1) * SEARCH_PAGE_SIZE + result.entries.length;
+  // `result` always belongs to the page the server last settled on, so the
+  // "X–Y of Z" line has to be computed from that page — pairing an optimistic
+  // page with the previous page's rows reads as "401–600 of 409" mid-flight.
+  const settledPage = Math.min(Math.max(1, props.page), totalPages);
+  const settledOffset = (settledPage - 1) * SEARCH_PAGE_SIZE;
+  const firstShown = result.entries.length === 0 ? 0 : settledOffset + 1;
+  const lastShown = Math.min(result.totalCount, settledOffset + result.entries.length);
+
+  /** Step the pager from the clamped page, so Prev works after a shrink. */
+  function stepPage(delta: number) {
+    const current = Math.min(liveParams().page, totalPages);
+    update({ page: Math.min(totalPages, Math.max(1, current + delta)) });
+  }
 
   // Counted off `live` so the badge reflects a just-tapped filter instead of
   // lagging a server round-trip behind it.
@@ -292,7 +308,14 @@ export default function SearchView(
     // dropped there, and a badge for a filter that isn't filtering is a lie.
     (parseAmountMinor(live.min) !== null || parseAmountMinor(live.max) !== null ? 1 : 0) +
     (isDefaultSearchBy(live.searchBy) ? 0 : 1);
-  const hasFilter = advCount > 0 || live.range !== "month" || live.q.trim() !== "";
+  // Raw text, not the parsed bound: a value the server rejects filters nothing
+  // and lights no badge, so "Clear all" is the only way back out of it.
+  const hasFilter =
+    advCount > 0 ||
+    live.range !== "month" ||
+    live.q.trim() !== "" ||
+    live.min.trim() !== "" ||
+    live.max.trim() !== "";
 
   return (
     <div className="mx-auto min-h-dvh max-w-lg pb-12">
@@ -532,7 +555,10 @@ export default function SearchView(
             const [ty, tm] = props.todayIso.split("-").map(Number);
             // The dashboard clamps the same way; an unclamped offset would
             // silently land on a different month.
-            const offset = Math.max(-1200, Math.min(1200, (y - ty) * 12 + (m - tm)));
+            const offset = Math.max(
+              -MAX_PERIOD_OFFSET,
+              Math.min(MAX_PERIOD_OFFSET, (y - ty) * 12 + (m - tm)),
+            );
             return (
               <Link
                 href={offset === 0 ? "/" : `/?offset=${offset}`}
@@ -567,7 +593,7 @@ export default function SearchView(
         {totalPages > 1 && (
           <div className="mt-3 flex items-center justify-between">
             <button
-              onClick={() => update({ page: Math.max(1, liveParams().page - 1) })}
+              onClick={() => stepPage(-1)}
               disabled={page <= 1}
               className="flex h-11 items-center rounded-lg border border-gray-200 bg-white px-5 text-sm font-medium text-gray-600 active:bg-gray-100 disabled:opacity-40"
             >
@@ -577,7 +603,7 @@ export default function SearchView(
               Page {page} of {totalPages}
             </span>
             <button
-              onClick={() => update({ page: liveParams().page + 1 })}
+              onClick={() => stepPage(1)}
               disabled={page >= totalPages}
               className="flex h-11 items-center rounded-lg border border-gray-200 bg-white px-5 text-sm font-medium text-gray-600 active:bg-gray-100 disabled:opacity-40"
             >

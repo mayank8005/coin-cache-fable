@@ -220,6 +220,10 @@ export async function seedDashboard(): Promise<SeedDates> {
 /**
  * Bulk filler for pagination tests: one extra page-worth of cheap records in
  * the current month. Call after `seedDashboard`, before the page navigates.
+ *
+ * Every row shares one date AND one createdAt on purpose — that's the CSV-import
+ * shape where a date+createdAt sort has no total order and Postgres is free to
+ * return a different sequence per LIMIT.
  */
 export async function seedExtraRecords(count: number): Promise<void> {
   const user = await prisma.user.findUniqueOrThrow({ where: { email: TEST_EMAIL } });
@@ -228,17 +232,37 @@ export async function seedExtraRecords(count: number): Promise<void> {
     prisma.category.findFirstOrThrow({ where: { userId: user.id, name: "Food" } }),
   ]);
   const today = todayInIndia();
+  const createdAt = new Date("2020-01-01T00:00:00Z");
   await prisma.record.createMany({
     data: Array.from({ length: count }, (_, i) => ({
       userId: user.id,
       type: "EXPENSE" as const,
       amountMinor: 100 + i,
       date: dbDate(today),
+      createdAt,
       note: `Bulk ${i}`,
       accountId: account.id,
       categoryId: category.id,
     })),
   });
+}
+
+/**
+ * Corrupt a stored setting so server rendering throws (`Intl` rejects the
+ * timezone), which is the only reachable way to exercise the error boundary now
+ * that every URL parameter is validated. `restoreTimezone` undoes it.
+ */
+export async function breakTimezone(): Promise<void> {
+  await setTimezone("Not/AZone");
+}
+
+export async function restoreTimezone(): Promise<void> {
+  await setTimezone("Asia/Kolkata");
+}
+
+async function setTimezone(timezone: string): Promise<void> {
+  const user = await prisma.user.findUniqueOrThrow({ where: { email: TEST_EMAIL } });
+  await prisma.settings.update({ where: { userId: user.id }, data: { timezone } });
 }
 
 export async function closeTestDatabase() {
