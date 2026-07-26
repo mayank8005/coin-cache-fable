@@ -558,3 +558,21 @@ test("never shows a result range beyond the rows on screen", async ({ page }) =>
   await expect(page.getByRole("heading", { name: "1–200 of 409" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "201–400 of 409" })).toBeVisible();
 });
+
+test("swaps reversed amount bounds when the field loses focus", async ({ page }) => {
+  await allTime(page);
+  await openAdvanced(page);
+  const min = page.getByLabel("Minimum amount");
+  const max = page.getByLabel("Maximum amount");
+
+  await min.fill("1000");
+  await max.fill("50");
+  await max.blur();
+
+  // The server already filters ₹50–₹1000 either way; the inputs have to say so.
+  await expect(min).toHaveValue("50");
+  await expect(max).toHaveValue("1000");
+  await expect(page).toHaveURL(/min=50/);
+  await expect(page).toHaveURL(/max=1000/);
+  await expect(page.getByRole("heading", { name: "5 results", exact: true })).toBeVisible();
+});

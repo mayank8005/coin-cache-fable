@@ -36,28 +36,48 @@ read_owner_pid() {
 # the directory away. Whoever's pid survives the settle is the single owner.
 try_claim() {
   mkdir "$lock_dir" 2>/dev/null || return 1
-  printf '%s\n' "$$" > "$lock_pid_file"
+  # The directory can be renamed out from under us between the mkdir and this
+  # write; a failed write means we never owned it, not that the run should die.
+  printf '%s\n' "$$" > "$lock_pid_file" 2>/dev/null || return 1
   sleep 0.2
   [[ "$(read_owner_pid)" == "$$" ]] || return 1
   lock_acquired=1
   return 0
 }
 
+# A claim in progress publishes its pid within milliseconds. Wait a bounded
+# grace for it rather than declaring the run dead, wherever we judge a lock.
+await_owner_pid() {
+  local dir="$1" pid waited=0
+  pid="$(read_owner_pid "$dir")"
+  while [[ -z "$pid" && "$waited" -lt 50 ]]; do
+    [[ -d "$dir" ]] || break
+    sleep 0.1
+    waited=$((waited + 1))
+    pid="$(read_owner_pid "$dir")"
+  done
+  printf '%s' "$pid"
+}
+
+# Renamed-away locks whose owner is gone: collect them, but never touch one that
+# is still live (a hand-back we skipped because a third party re-claimed).
+sweep_stale_dirs() {
+  local dir
+  shopt -s nullglob
+  for dir in "$lock_dir".stale.*; do
+    [[ -d "$dir" ]] || continue
+    pid_is_live "$(read_owner_pid "$dir")" || rm -rf "$dir"
+  done
+  shopt -u nullglob
+}
+
 acquire_lock() {
-  local attempt owner waited stale_dir
+  local attempt owner stale_dir
+  sweep_stale_dirs
   for attempt in 1 2 3; do
     try_claim && return 0
 
-    owner="$(read_owner_pid)"
-    waited=0
-    # A claim in progress publishes its pid within milliseconds; give it a
-    # bounded grace instead of declaring the run dead.
-    while [[ -z "$owner" && "$waited" -lt 50 ]]; do
-      [[ -d "$lock_dir" ]] || break
-      sleep 0.1
-      waited=$((waited + 1))
-      owner="$(read_owner_pid)"
-    done
+    owner="$(await_owner_pid "$lock_dir")"
 
     # A live owner always wins, and we never touch its lock.
     if pid_is_live "$owner"; then
@@ -66,13 +86,15 @@ acquire_lock() {
 
     # Stale (crashed run, garbage pid, or no pid within the grace). Rename it
     # away: exactly one racer's `mv` can succeed, so two waiters can't both
-    # clear the lock and then both claim it.
-    stale_dir="$lock_dir.stale.$$"
+    # clear the lock and then both claim it. The name is unique per attempt so
+    # it can never collide with leftover litter — `mv` onto an existing
+    # directory would nest the lock inside it instead of failing.
+    stale_dir="$lock_dir.stale.$$.$attempt.$(date +%s)"
     if mv "$lock_dir" "$stale_dir" 2>/dev/null; then
-      # The lock may have been re-claimed between our staleness check and this
-      # rename, in which case we are holding a live run's lock: give it back
-      # instead of deleting it.
-      if pid_is_live "$(read_owner_pid "$stale_dir")"; then
+      # The lock may have been claimed between our staleness check and this
+      # rename, so judge the renamed directory with the same grace: if an owner
+      # turns up alive, we are holding a live run's lock — give it back.
+      if pid_is_live "$(await_owner_pid "$stale_dir")"; then
         if [[ ! -e "$lock_dir" ]]; then
           mv "$stale_dir" "$lock_dir" 2>/dev/null || true
         fi

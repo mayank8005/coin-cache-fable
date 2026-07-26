@@ -281,7 +281,11 @@ export async function searchEntries(
   const lastPage = Math.max(1, Math.ceil(totalCount / SEARCH_PAGE_SIZE));
   // Reported back so the UI labels the rows by the page that was served rather
   // than re-deriving this clamp and risking a heading that contradicts them.
-  const servedPage = Math.max(1, Math.min(page, lastPage));
+  // Defensive against a non-integer page: the route clamps it today, but a NaN
+  // would reach Prisma as a Float and a fraction would offset by half a page.
+  const servedPage = Number.isFinite(page)
+    ? Math.max(1, Math.min(Math.trunc(page), lastPage))
+    : 1;
   const offset = (servedPage - 1) * SEARCH_PAGE_SIZE;
   const fetchCount = offset + SEARCH_PAGE_SIZE;
 

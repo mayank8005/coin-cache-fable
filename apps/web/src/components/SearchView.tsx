@@ -254,6 +254,22 @@ export default function SearchView(
     update({ searchBy: active ? current.filter((f) => f !== id) : [...current, id] });
   }
 
+  /**
+   * Reversed bounds already filter correctly (the server swaps them), but the
+   * inputs would keep showing Min 1000 / Max 50. Correct them on blur, the way
+   * the date pair visibly self-corrects; the debounce then pushes the fixed
+   * pair on its own. Deliberately not derived from props — resyncing local text
+   * from server state is what makes the debounce loop.
+   */
+  function normalizeBounds() {
+    const lo = parseAmountMinor(minText);
+    const hi = parseAmountMinor(maxText);
+    if (lo !== null && hi !== null && lo > hi) {
+      setMinText(maxText);
+      setMaxText(minText);
+    }
+  }
+
   function toggleType(id: "EXPENSE" | "INCOME" | "TRANSFER") {
     const base = liveParams();
     const next = base.type === id ? null : id;
@@ -512,6 +528,7 @@ export default function SearchView(
               min="0"
               value={minText}
               onChange={(e) => setMinText(e.target.value)}
+              onBlur={normalizeBounds}
               placeholder="Min"
               className="h-10 w-24 rounded-lg border border-gray-200 bg-white px-2 text-sm text-gray-700 outline-none focus:border-brand"
               aria-label="Minimum amount"
@@ -523,6 +540,7 @@ export default function SearchView(
               min="0"
               value={maxText}
               onChange={(e) => setMaxText(e.target.value)}
+              onBlur={normalizeBounds}
               placeholder="Max"
               className="h-10 w-24 rounded-lg border border-gray-200 bg-white px-2 text-sm text-gray-700 outline-none focus:border-brand"
               aria-label="Maximum amount"
