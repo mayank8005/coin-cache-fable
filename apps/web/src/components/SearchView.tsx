@@ -116,6 +116,8 @@ export default function SearchView(
     null,
   );
   const [advOpen, setAdvOpen] = useState(false);
+  const boundsRef = useRef<HTMLDivElement | null>(null);
+  const [boundsNotice, setBoundsNotice] = useState("");
 
   const fromProps: Params = {
     q: props.q,
@@ -256,17 +258,22 @@ export default function SearchView(
 
   /**
    * Reversed bounds already filter correctly (the server swaps them), but the
-   * inputs would keep showing Min 1000 / Max 50. Correct them on blur, the way
-   * the date pair visibly self-corrects; the debounce then pushes the fixed
-   * pair on its own. Deliberately not derived from props — resyncing local text
-   * from server state is what makes the debounce loop.
+   * inputs would keep showing Min 1000 / Max 50. Correct them once focus leaves
+   * the pair, the way the date pair visibly self-corrects; the debounce then
+   * pushes the fixed pair on its own. Deliberately not derived from props —
+   * resyncing local text from server state is what makes the debounce loop.
+   *
+   * Scoped to the pair on purpose: swapping while tabbing from Min to Max would
+   * drop the just-typed value into the field the user is about to type into.
    */
-  function normalizeBounds() {
+  function normalizeBounds(e: React.FocusEvent<HTMLInputElement>) {
+    if (boundsRef.current?.contains(e.relatedTarget as Node | null)) return;
     const lo = parseAmountMinor(minText);
     const hi = parseAmountMinor(maxText);
     if (lo !== null && hi !== null && lo > hi) {
       setMinText(maxText);
       setMaxText(minText);
+      setBoundsNotice(`Amount bounds swapped: minimum ${maxText}, maximum ${minText}`);
     }
   }
 
@@ -521,7 +528,7 @@ export default function SearchView(
         {advOpen && (
         <div>
           <RowLabel>Amount</RowLabel>
-          <div className="flex items-center gap-2">
+          <div ref={boundsRef} className="flex items-center gap-2">
             <input
               type="number"
               inputMode="decimal"
@@ -546,6 +553,9 @@ export default function SearchView(
               aria-label="Maximum amount"
             />
           </div>
+          <p role="status" aria-live="polite" className="sr-only">
+            {boundsNotice}
+          </p>
         </div>
         )}
       </div>

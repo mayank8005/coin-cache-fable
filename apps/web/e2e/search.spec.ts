@@ -574,5 +574,27 @@ test("swaps reversed amount bounds when the field loses focus", async ({ page })
   await expect(max).toHaveValue("1000");
   await expect(page).toHaveURL(/min=50/);
   await expect(page).toHaveURL(/max=1000/);
-  await expect(page.getByRole("heading", { name: "5 results", exact: true })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText(
+    "Amount bounds swapped: minimum 50, maximum 1000",
+  );
+});
+
+test("leaves the bounds alone while tabbing between them", async ({ page }) => {
+  await allTime(page);
+  await openAdvanced(page);
+  const min = page.getByLabel("Minimum amount");
+  const max = page.getByLabel("Maximum amount");
+
+  // Max already holds a smaller value, so a swap on Min's blur would move 1000
+  // into Max and the next keystrokes would overwrite it.
+  await max.fill("50");
+  await min.fill("1000");
+  await min.press("Tab");
+  await expect(max).toBeFocused();
+  await max.fill("2000");
+
+  await expect(min).toHaveValue("1000");
+  await expect(max).toHaveValue("2000");
+  await expect(page).toHaveURL(/min=1000/);
+  await expect(page).toHaveURL(/max=2000/);
 });

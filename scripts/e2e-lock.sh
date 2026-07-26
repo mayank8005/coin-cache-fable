@@ -13,6 +13,9 @@
 lock_dir="${TMPDIR:-/tmp}/coincache-e2e.lock"
 lock_pid_file="$lock_dir/pid"
 lock_acquired=0
+# Why the last acquire_lock failed: "busy" (a live run holds it) or "unwritable"
+# (the lock path itself can't be created), so callers can say something true.
+lock_failure_reason=""
 
 # `ps`, not `kill -0`: kill reports EPERM for another user's live process, which
 # reads as "dead" and evicts them. Pid 0 is rejected outright — `kill -0 0`
@@ -35,10 +38,20 @@ read_owner_pid() {
 # waiter that judged this path stale just before we created it can still rename
 # the directory away. Whoever's pid survives the settle is the single owner.
 try_claim() {
-  mkdir "$lock_dir" 2>/dev/null || return 1
+  if ! mkdir "$lock_dir" 2>/dev/null; then
+    # No directory at all means the parent is what refused us, not a busy lock.
+    [[ -d "$lock_dir" ]] || lock_failure_reason="unwritable"
+    return 1
+  fi
   # The directory can be renamed out from under us between the mkdir and this
   # write; a failed write means we never owned it, not that the run should die.
-  printf '%s\n' "$$" > "$lock_pid_file" 2>/dev/null || return 1
+  # The redirection must be inside the group — a failing open on the redirect
+  # itself is reported before a trailing `2>/dev/null` takes effect.
+  if ! { printf '%s\n' "$$" > "$lock_pid_file"; } 2>/dev/null; then
+    lock_failure_reason="unwritable"
+    rmdir "$lock_dir" 2>/dev/null || true
+    return 1
+  fi
   sleep 0.2
   [[ "$(read_owner_pid)" == "$$" ]] || return 1
   lock_acquired=1
@@ -62,17 +75,25 @@ await_owner_pid() {
 # Renamed-away locks whose owner is gone: collect them, but never touch one that
 # is still live (a hand-back we skipped because a third party re-claimed).
 sweep_stale_dirs() {
-  local dir
+  local dir had_nullglob
+  # Sourced library: leave the caller's glob options exactly as we found them,
+  # and don't let `failglob` turn "no litter" into an error.
+  had_nullglob="$(shopt -p nullglob)"
   shopt -s nullglob
-  for dir in "$lock_dir".stale.*; do
-    [[ -d "$dir" ]] || continue
-    pid_is_live "$(read_owner_pid "$dir")" || rm -rf "$dir"
-  done
-  shopt -u nullglob
+  if compgen -G "$lock_dir.stale.*" >/dev/null 2>&1; then
+    for dir in "$lock_dir".stale.*; do
+      [[ -d "$dir" ]] || continue
+      # Undeletable litter (foreign owner in a shared /tmp, read-only mode)
+      # must not print on every future run.
+      pid_is_live "$(read_owner_pid "$dir")" || rm -rf "$dir" 2>/dev/null || true
+    done
+  fi
+  eval "$had_nullglob"
 }
 
 acquire_lock() {
   local attempt owner stale_dir
+  lock_failure_reason=""
   sweep_stale_dirs
   for attempt in 1 2 3; do
     try_claim && return 0
@@ -81,6 +102,7 @@ acquire_lock() {
 
     # A live owner always wins, and we never touch its lock.
     if pid_is_live "$owner"; then
+      lock_failure_reason="busy"
       return 1
     fi
 
@@ -98,6 +120,7 @@ acquire_lock() {
         if [[ ! -e "$lock_dir" ]]; then
           mv "$stale_dir" "$lock_dir" 2>/dev/null || true
         fi
+        lock_failure_reason="busy"
         return 1
       fi
       rm -rf "$stale_dir"

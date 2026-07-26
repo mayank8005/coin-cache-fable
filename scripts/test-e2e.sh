@@ -15,7 +15,11 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 if ! acquire_lock; then
-  echo "Another CoinCache E2E run is already active. Wait for it to finish before retrying." >&2
+  if [[ "${lock_failure_reason:-}" == "unwritable" ]]; then
+    echo "Could not create the E2E lock at ${lock_dir} — check permissions and free space." >&2
+  else
+    echo "Another CoinCache E2E run is already active. Wait for it to finish before retrying." >&2
+  fi
   exit 1
 fi
 
