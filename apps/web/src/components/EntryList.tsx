@@ -180,77 +180,77 @@ export default function EntryList(props: {
           });
 
         const headerButton = (
-            <button
-              type="button"
-              onClick={() => toggleGroup(g.key)}
-              aria-expanded={open}
-              aria-controls={contentId}
-              aria-label={`${open ? "Collapse" : "Expand"} ${g.label}, ${g.items.length} ${
-                g.items.length === 1 ? "record" : "records"
-              }`}
-              className={`w-full px-3 py-2.5 text-left active:bg-gray-50${
-                props.headerAction ? " min-w-0 flex-1" : ""
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                {g.icon && (
-                  <span
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm leading-none"
-                    style={{ backgroundColor: g.color + "26" }}
-                    aria-hidden="true"
-                  >
-                    {g.icon}
-                  </span>
-                )}
-                <span className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-700">
-                  {g.label}
-                </span>
-                <span className="text-xs font-medium text-gray-400">
-                  {g.items.length} {g.items.length === 1 ? "record" : "records"}
-                </span>
-                <svg
-                  viewBox="0 0 24 24"
-                  className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+          <button
+            type="button"
+            onClick={() => toggleGroup(g.key)}
+            aria-expanded={open}
+            aria-controls={contentId}
+            aria-label={`${open ? "Collapse" : "Expand"} ${g.label}, ${g.items.length} ${
+              g.items.length === 1 ? "record" : "records"
+            }`}
+            className={`w-full px-3 py-2.5 text-left active:bg-gray-50${
+              props.headerAction ? " min-w-0 flex-1" : ""
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              {g.icon && (
+                <span
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm leading-none"
+                  style={{ backgroundColor: g.color + "26" }}
                   aria-hidden="true"
                 >
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-              </span>
-              <span className="mt-2 flex items-baseline gap-3">
-                {summaries.map((s) => (
-                  <span key={s.label} className="flex items-baseline gap-2">
-                    <span className="text-xs font-medium text-gray-400">{s.label}</span>
-                    <span className={`text-sm font-semibold ${s.className}`}>
-                      {formatMoney(s.amount, currency, locale)}
-                    </span>
-                  </span>
-                ))}
-                {showProgressBar && g.expenseMinor > 0 && (
-                  <span className="ml-auto text-xs font-medium text-gray-400">{percent}%</span>
-                )}
-              </span>
-              {showProgressBar && g.expenseMinor > 0 && (
-                <span
-                  role="progressbar"
-                  aria-label={`${g.label} share of expenses`}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={percent}
-                  aria-valuetext={`${percent}% of expenses`}
-                  className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-gray-100"
-                >
-                  <span
-                    className="block h-full rounded-full"
-                    style={{ width: `${Math.max(2, expenseShare * 100)}%`, backgroundColor: g.color }}
-                  />
+                  {g.icon}
                 </span>
               )}
-            </button>
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-700">
+                {g.label}
+              </span>
+              <span className="text-xs font-medium text-gray-400">
+                {g.items.length} {g.items.length === 1 ? "record" : "records"}
+              </span>
+              <svg
+                viewBox="0 0 24 24"
+                className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </span>
+            <span className="mt-2 flex items-baseline gap-3">
+              {summaries.map((s) => (
+                <span key={s.label} className="flex items-baseline gap-2">
+                  <span className="text-xs font-medium text-gray-400">{s.label}</span>
+                  <span className={`text-sm font-semibold ${s.className}`}>
+                    {formatMoney(s.amount, currency, locale)}
+                  </span>
+                </span>
+              ))}
+              {showProgressBar && g.expenseMinor > 0 && (
+                <span className="ml-auto text-xs font-medium text-gray-400">{percent}%</span>
+              )}
+            </span>
+            {showProgressBar && g.expenseMinor > 0 && (
+              <span
+                role="progressbar"
+                aria-label={`${g.label} share of expenses`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={percent}
+                aria-valuetext={`${percent}% of expenses`}
+                className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-gray-100"
+              >
+                <span
+                  className="block h-full rounded-full"
+                  style={{ width: `${Math.max(2, expenseShare * 100)}%`, backgroundColor: g.color }}
+                />
+              </span>
+            )}
+          </button>
         );
 
         return (
@@ -268,74 +268,74 @@ export default function EntryList(props: {
               hidden={!open}
               className="divide-y divide-gray-50 border-t border-gray-100"
             >
-                {g.items.map((e) => (
-                  <li key={`${e.kind}-${e.id}`}>
-                    <button
-                      onClick={() => props.onEdit(e)}
-                      className="flex w-full items-center gap-3 px-3 py-2.5 text-left active:bg-gray-50"
-                    >
-                      {e.kind === "record" ? (
-                        <>
-                          <span
-                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg leading-none"
-                            style={{ backgroundColor: e.categoryColor + "26" }}
-                          >
-                            {e.categoryIcon}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-medium">
-                              {groupBy === "category" ? e.note || e.categoryName : e.categoryName}
-                            </div>
-                            <div className="truncate text-xs text-gray-400">
-                              {[
-                                ...(showRowDate
-                                  ? [SHORT_DATE_FMT.format(new Date(e.date + "T00:00:00Z"))]
-                                  : []),
-                                e.accountName,
-                                // The note is the row title in category mode.
-                                ...(e.note && groupBy !== "category" ? [e.note] : []),
-                              ].join(" · ")}
-                            </div>
+              {g.items.map((e) => (
+                <li key={`${e.kind}-${e.id}`}>
+                  <button
+                    onClick={() => props.onEdit(e)}
+                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left active:bg-gray-50"
+                  >
+                    {e.kind === "record" ? (
+                      <>
+                        <span
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg leading-none"
+                          style={{ backgroundColor: e.categoryColor + "26" }}
+                        >
+                          {e.categoryIcon}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium">
+                            {groupBy === "category" ? e.note || e.categoryName : e.categoryName}
                           </div>
-                          <span
-                            className={`shrink-0 text-sm font-semibold ${
-                              e.type === "EXPENSE" ? "text-expense" : "text-income"
-                            }`}
-                          >
-                            {formatMoney(
-                              e.type === "EXPENSE" ? -e.amountMinor : e.amountMinor,
-                              currency,
-                              locale,
-                              { sign: true },
-                            )}
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-lg leading-none">
-                            ⇄
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-medium">
-                              {e.fromAccountName} → {e.toAccountName}
-                            </div>
-                            <div className="truncate text-xs text-gray-400">
-                              {[
-                                showRowDate
-                                  ? SHORT_DATE_FMT.format(new Date(e.date + "T00:00:00Z"))
-                                  : "Transfer",
-                                ...(e.note ? [e.note] : []),
-                              ].join(" · ")}
-                            </div>
+                          <div className="truncate text-xs text-gray-400">
+                            {[
+                              ...(showRowDate
+                                ? [SHORT_DATE_FMT.format(new Date(e.date + "T00:00:00Z"))]
+                                : []),
+                              e.accountName,
+                              // The note is the row title in category mode.
+                              ...(e.note && groupBy !== "category" ? [e.note] : []),
+                            ].join(" · ")}
                           </div>
-                          <span className="shrink-0 text-sm font-semibold text-gray-500">
-                            {formatMoney(e.amountMinor, currency, locale)}
-                          </span>
-                        </>
-                      )}
-                    </button>
-                  </li>
-                ))}
+                        </div>
+                        <span
+                          className={`shrink-0 text-sm font-semibold ${
+                            e.type === "EXPENSE" ? "text-expense" : "text-income"
+                          }`}
+                        >
+                          {formatMoney(
+                            e.type === "EXPENSE" ? -e.amountMinor : e.amountMinor,
+                            currency,
+                            locale,
+                            { sign: true },
+                          )}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-lg leading-none">
+                          ⇄
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium">
+                            {e.fromAccountName} → {e.toAccountName}
+                          </div>
+                          <div className="truncate text-xs text-gray-400">
+                            {[
+                              showRowDate
+                                ? SHORT_DATE_FMT.format(new Date(e.date + "T00:00:00Z"))
+                                : "Transfer",
+                              ...(e.note ? [e.note] : []),
+                            ].join(" · ")}
+                          </div>
+                        </div>
+                        <span className="shrink-0 text-sm font-semibold text-gray-500">
+                          {formatMoney(e.amountMinor, currency, locale)}
+                        </span>
+                      </>
+                    )}
+                  </button>
+                </li>
+              ))}
             </ul>
           </div>
         );

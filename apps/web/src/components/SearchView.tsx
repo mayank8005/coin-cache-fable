@@ -136,15 +136,22 @@ export default function SearchView(
     lastPropsUrl.current = propsUrl;
     pending.current = null;
   }
+  const propsRef = useRef(fromProps);
+  propsRef.current = fromProps;
   const live = pending.current ?? fromProps;
-  const liveRef = useRef(live);
-  liveRef.current = live;
+
+  /**
+   * The newest params anyone has asked for. Read through refs rather than the
+   * render snapshot, so a debounced call scheduled before a chip toggle — or a
+   * second toggle fired before React re-renders — still sees the first one.
+   */
+  function liveParams(): Params {
+    return pending.current ?? propsRef.current;
+  }
 
   // Any filter change goes back to page 1; only the pager passes `page`.
-  // Reads the live params through a ref so a debounced call scheduled before a
-  // chip toggle (or a second rapid toggle) can't rebuild the URL from stale ones.
   function update(patch: Partial<Params> & { page?: number }) {
-    const base = liveRef.current;
+    const base = liveParams();
     const next: Params = {
       // The text inputs are controlled locally, so their live value is `text`;
       // the debounced caller passes all three explicitly anyway.
@@ -214,7 +221,7 @@ export default function SearchView(
   // At least one field must stay on, so un-toggling the last one is a no-op
   // (the chip renders as aria-disabled to explain the dead click).
   function toggleSearchBy(id: SearchByField) {
-    const current = liveRef.current.searchBy;
+    const current = liveParams().searchBy;
     const active = current.includes(id);
     if (active && current.length === 1) return;
     update({ searchBy: active ? current.filter((f) => f !== id) : [...current, id] });
@@ -241,13 +248,15 @@ export default function SearchView(
   const firstShown = result.entries.length === 0 ? 0 : (page - 1) * SEARCH_PAGE_SIZE + 1;
   const lastShown = (page - 1) * SEARCH_PAGE_SIZE + result.entries.length;
 
+  // Counted off `live` so the badge reflects a just-tapped filter instead of
+  // lagging a server round-trip behind it.
   const advCount =
-    (props.type !== null ? 1 : 0) +
-    (props.categoryId !== null ? 1 : 0) +
-    (props.accountId !== null ? 1 : 0) +
-    (props.min.trim() !== "" || props.max.trim() !== "" ? 1 : 0) +
+    (live.type !== null ? 1 : 0) +
+    (live.categoryId !== null ? 1 : 0) +
+    (live.accountId !== null ? 1 : 0) +
+    (live.min.trim() !== "" || live.max.trim() !== "" ? 1 : 0) +
     (isDefaultSearchBy(live.searchBy) ? 0 : 1);
-  const hasFilter = advCount > 0 || props.range !== "month" || props.q.trim() !== "";
+  const hasFilter = advCount > 0 || live.range !== "month" || live.q.trim() !== "";
 
   return (
     <div className="mx-auto min-h-dvh max-w-lg pb-12">

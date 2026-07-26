@@ -141,6 +141,46 @@ test("matches description by default and account only when enabled", async ({ pa
   await expect(page.getByText("Old rent")).toBeVisible();
 });
 
+test("matches a category name only when the Category field is enabled", async ({ page }) => {
+  await allTime(page);
+
+  await searchBox(page).fill("Food");
+  await expect(page.getByText(EMPTY_TEXT)).toBeVisible();
+
+  await openAdvanced(page);
+  const categoryChip = page.getByRole("button", { name: "Category", exact: true });
+  await expect(categoryChip).toHaveAttribute("aria-pressed", "false");
+  await categoryChip.click();
+  await expect(categoryChip).toHaveAttribute("aria-pressed", "true");
+
+  await expect(page.getByRole("heading", { name: "3 results", exact: true })).toBeVisible();
+  await expect(page.getByText("Lunch groceries")).toBeVisible();
+  await expect(page.getByText("Market groceries")).toBeVisible();
+  await expect(page.getByText("Old rent")).toBeVisible();
+  await expect(page.getByText("Bus pass")).toHaveCount(0);
+});
+
+test("drops transfers entirely when only Category is enabled", async ({ page }) => {
+  await allTime(page);
+  await openAdvanced(page);
+  await page.getByRole("button", { name: "Category", exact: true }).click();
+  await page.getByRole("button", { name: "Description", exact: true }).click();
+  await page.getByRole("button", { name: "Amount", exact: true }).click();
+  await expect(page).toHaveURL(/[?&]by=category(&|$)/);
+
+  // Transfers have no category, so their OR list is empty: an amount that would
+  // otherwise match the seeded transfer exactly must return nothing at all.
+  await searchBox(page).fill("30");
+  await expect(page.getByText(EMPTY_TEXT)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "0 results", exact: true })).toBeVisible();
+  await expect(page.getByText("Cash → Bank")).toHaveCount(0);
+
+  await searchBox(page).fill("Food");
+  await expect(page.getByRole("heading", { name: "3 results", exact: true })).toBeVisible();
+  await expect(page.getByText("Lunch groceries")).toBeVisible();
+  await expect(page.getByText("Cash → Bank")).toHaveCount(0);
+});
+
 test("matches an exact amount but not a partial one", async ({ page }) => {
   await allTime(page);
 
