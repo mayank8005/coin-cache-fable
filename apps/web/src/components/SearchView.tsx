@@ -4,8 +4,21 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Entry, PlainAccount, PlainCategory, SearchResult } from "@/lib/data";
-import { SEARCH_PAGE_SIZE, SEARCH_RANGES, type SearchRange } from "@/lib/periods";
-import { formatMoney } from "@/lib/money";
+import {
+  MAX_PERIOD_OFFSET,
+  parseIsoDate,
+  SEARCH_PAGE_SIZE,
+  SEARCH_RANGES,
+  type SearchRange,
+} from "@/lib/periods";
+import {
+  DEFAULT_SEARCH_BY,
+  SEARCH_BY_FIELDS,
+  isDefaultSearchBy,
+  serializeSearchBy,
+  type SearchByField,
+} from "@/lib/search";
+import { formatMoney, parseAmountMinor } from "@/lib/money";
 import EntryList from "./EntryList";
 import RecordDialog from "./RecordDialog";
 import TransferDialog from "./TransferDialog";
@@ -26,21 +39,60 @@ type Params = {
   max: string;
   categoryId: string | null;
   accountId: string | null;
+  searchBy: SearchByField[];
+  /** Part of the optimistic set too, so a double-tap on the pager composes. */
+  page: number;
 };
 
-function Chip(props: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function Chip(props: {
+  active: boolean;
+  /** Active and un-toggleable: still clickable, but the click does nothing. */
+  locked?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <button
+      type="button"
       onClick={props.onClick}
+      aria-pressed={props.active}
+      aria-disabled={props.locked ? true : undefined}
       className={`shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 text-xs font-medium transition-colors ${
         props.active
           ? "bg-brand text-white shadow-sm"
           : "border border-gray-200 bg-white text-gray-600 active:bg-gray-100"
-      }`}
+      }${props.locked ? " cursor-default opacity-60" : ""}`}
     >
       {props.children}
     </button>
   );
+}
+
+function buildQuery(p: Params): string {
+  const s = new URLSearchParams();
+  if (p.q.trim()) s.set("q", p.q.trim());
+  if (p.type) s.set("type", p.type);
+  if (p.range !== "month") s.set("range", p.range);
+  if (p.range === "custom") {
+    if (p.from) s.set("from", p.from);
+    if (p.to) s.set("to", p.to);
+  }
+  if (p.min.trim()) s.set("min", p.min.trim());
+  if (p.max.trim()) s.set("max", p.max.trim());
+  if (p.categoryId) s.set("category", p.categoryId);
+  if (p.accountId) s.set("account", p.accountId);
+  if (!isDefaultSearchBy(p.searchBy)) s.set("by", serializeSearchBy(p.searchBy));
+  if (p.page > 1) s.set("page", String(p.page));
+  return s.toString();
+}
+
+/** True when both bound pairs parse to the same unordered pair. */
+function sameBounds(aMin: string, aMax: string, bMin: string, bMax: string): boolean {
+  const key = (lo: string, hi: string) =>
+    [parseAmountMinor(lo), parseAmountMinor(hi)]
+      .sort((x, y) => (x ?? -1) - (y ?? -1))
+      .join(",");
+  return key(aMin, aMax) === key(bMin, bMax);
 }
 
 function RowLabel(props: { children: React.ReactNode }) {
@@ -53,7 +105,6 @@ function RowLabel(props: { children: React.ReactNode }) {
 
 export default function SearchView(
   props: Params & {
-    page: number;
     result: SearchResult;
     accounts: PlainAccount[];
     categories: PlainCategory[];
@@ -69,116 +120,275 @@ export default function SearchView(
   const [text, setText] = useState(props.q);
   const [minText, setMinText] = useState(props.min);
   const [maxText, setMaxText] = useState(props.max);
-  const skipFirst = useRef(true);
-  const resetting = useRef(false);
 
   const [recordDialog, setRecordDialog] = useState<Extract<Entry, { kind: "record" }> | null>(null);
   const [transferDialog, setTransferDialog] = useState<Extract<Entry, { kind: "transfer" }> | null>(
     null,
   );
   const [advOpen, setAdvOpen] = useState(false);
+  const boundsRef = useRef<HTMLDivElement | null>(null);
+  const [boundsNotice, setBoundsNotice] = useState("");
+
+  const fromProps: Params = {
+    q: props.q,
+    type: props.type,
+    range: props.range,
+    from: props.from,
+    to: props.to,
+    min: props.min,
+    max: props.max,
+    categoryId: props.categoryId,
+    accountId: props.accountId,
+    searchBy: props.searchBy,
+    page: props.page,
+  };
+
+  // Props only catch up after a server round-trip, so a filter change made in
+  // the last few hundred ms isn't visible in them yet. `pending` is what we
+  // last asked for; every filter read goes through it, and it is dropped once
+  // the server state settles on it (or moves somewhere else entirely).
+  const [pending, setPending] = useState<Params | null>(null);
+  // Mirrors the state for read-your-writes: two taps in the same tick both have
+  // to compose, and the second one runs before React has re-rendered.
+  const pendingRef = useRef<Params | null>(null);
+  const propsRef = useRef(fromProps);
+  const lastPropsKey = useRef<string | null>(null);
+  const propsKey = buildQuery(fromProps);
+  const live = pending ?? fromProps;
+
+  /** The newest params anyone has asked for — never a render-phase snapshot. */
+  function liveParams(): Params {
+    return pendingRef.current ?? propsRef.current;
+  }
+
+  function setLive(next: Params | null) {
+    pendingRef.current = next;
+    setPending(next);
+  }
+
+  // Reconcile the optimistic copy with the server on every commit: our push
+  // landed (settled), or something else navigated (moved) — either way props
+  // are authoritative again.
+  useEffect(() => {
+    propsRef.current = fromProps;
+    const moved = lastPropsKey.current !== null && lastPropsKey.current !== propsKey;
+    lastPropsKey.current = propsKey;
+    if (!pendingRef.current) return;
+    if (moved || buildQuery(pendingRef.current) === propsKey) setLive(null);
+  });
 
   // Any filter change goes back to page 1; only the pager passes `page`.
-  function update(patch: Partial<Params> & { page?: number }) {
+  function update(patch: Partial<Params>) {
+    const base = liveParams();
     const next: Params = {
-      q: patch.q ?? text,
-      type: patch.type === undefined ? props.type : patch.type,
-      range: patch.range ?? props.range,
-      from: patch.from === undefined ? props.from : patch.from,
-      to: patch.to === undefined ? props.to : patch.to,
-      min: patch.min ?? minText,
-      max: patch.max ?? maxText,
-      categoryId: patch.categoryId === undefined ? props.categoryId : patch.categoryId,
-      accountId: patch.accountId === undefined ? props.accountId : patch.accountId,
+      // Text state is never read here: it reaches the URL through the debounce
+      // (which passes all three explicitly), so a tap right after a reset can't
+      // resurrect text the reset just cleared.
+      q: patch.q ?? base.q,
+      type: patch.type === undefined ? base.type : patch.type,
+      range: patch.range ?? base.range,
+      from: patch.from === undefined ? base.from : patch.from,
+      to: patch.to === undefined ? base.to : patch.to,
+      min: patch.min ?? base.min,
+      max: patch.max ?? base.max,
+      categoryId: patch.categoryId === undefined ? base.categoryId : patch.categoryId,
+      accountId: patch.accountId === undefined ? base.accountId : patch.accountId,
+      searchBy: patch.searchBy ?? base.searchBy,
+      page: patch.page ?? 1,
     };
-    const s = new URLSearchParams();
-    if (next.q.trim()) s.set("q", next.q.trim());
-    if (next.type) s.set("type", next.type);
-    if (next.range !== "month") s.set("range", next.range);
-    if (next.range === "custom") {
-      if (next.from) s.set("from", next.from);
-      if (next.to) s.set("to", next.to);
-    }
-    if (next.min.trim()) s.set("min", next.min.trim());
-    if (next.max.trim()) s.set("max", next.max.trim());
-    if (next.categoryId) s.set("category", next.categoryId);
-    if (next.accountId) s.set("account", next.accountId);
-    if (patch.page && patch.page > 1) s.set("page", String(patch.page));
-    const str = s.toString();
+    setLive(next);
+    const str = buildQuery(next);
     // Jump back to the top when flipping pages; stay put while tweaking filters.
     router.replace(str ? `/search?${str}` : "/search", { scroll: Boolean(patch.page) });
   }
 
   // Debounced typing: text and amount bounds push into the URL after a pause.
+  // Pushing only when they differ from the live params keeps mount and reset
+  // from firing a redundant navigation, without ever swallowing a keystroke.
   useEffect(() => {
-    if (skipFirst.current) {
-      skipFirst.current = false;
-      return;
-    }
-    if (resetting.current) return;
-    const t = setTimeout(() => update({ q: text, min: minText, max: maxText }), 350);
+    const t = setTimeout(() => {
+      const base = liveParams();
+      if (
+        text.trim() === base.q.trim() &&
+        minText.trim() === base.min.trim() &&
+        maxText.trim() === base.max.trim()
+      )
+        return;
+      // Reordering the bounds filters exactly the same rows, so it must not
+      // throw the reader back to page 1 the way a real filter change does.
+      const neutral =
+        text.trim() === base.q.trim() && sameBounds(minText, maxText, base.min, base.max);
+      update({
+        q: text,
+        min: minText,
+        max: maxText,
+        ...(neutral ? { page: base.page } : {}),
+      });
+    }, 350);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, minText, maxText]);
+
+  /** Every filter back to its default — the shape both reset paths land on. */
+  function clearedParams(): Params {
+    return {
+      q: "",
+      type: null,
+      range: "month",
+      from: null,
+      to: null,
+      min: "",
+      max: "",
+      categoryId: null,
+      accountId: null,
+      searchBy: [...DEFAULT_SEARCH_BY],
+      page: 1,
+    };
+  }
+
+  function reset() {
+    setText("");
+    setMinText("");
+    setMaxText("");
+    // A concrete cleared copy rather than null: the chips read as cleared right
+    // away, and anything tapped before the round-trip lands composes on top of
+    // the cleared state instead of resurrecting the filters we just dropped.
+    setLive(clearedParams());
+    router.replace("/search", { scroll: false });
+  }
 
   // Filters only live within a search session: a fresh document load (refresh,
   // reopened PWA tab, direct link) that carries filter params starts clean.
   // This component stays mounted during in-session filtering, so the effect
   // fires only on genuine page loads.
   useEffect(() => {
-    if (window.location.search) {
-      resetting.current = true;
-      setText("");
-      setMinText("");
-      setMaxText("");
-      router.replace("/search", { scroll: false });
-    }
+    if (window.location.search) reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The reset is done once the server round-trip lands with clean props;
-  // until then the debounce above must not push stale values back.
-  useEffect(() => {
-    if (
-      resetting.current &&
-      props.q === "" &&
-      props.type === null &&
-      props.range === "month" &&
-      props.categoryId === null &&
-      props.accountId === null &&
-      props.min === "" &&
-      props.max === ""
-    ) {
-      resetting.current = false;
-    }
-  });
+  // At least one field must stay on, so un-toggling the last one is a no-op
+  // (the chip renders as aria-disabled to explain the dead click).
+  function toggleSearchBy(id: SearchByField) {
+    const current = liveParams().searchBy;
+    const active = current.includes(id);
+    if (active && current.length === 1) return;
+    update({ searchBy: active ? current.filter((f) => f !== id) : [...current, id] });
+  }
 
-  function clearAll() {
-    setText("");
-    setMinText("");
-    setMaxText("");
-    skipFirst.current = true; // the state resets above shouldn't re-trigger a push
-    router.replace("/search", { scroll: false });
+  /**
+   * Reversed bounds already filter correctly (the server swaps them), but the
+   * inputs would keep showing Min 1000 / Max 50. Correct them once focus leaves
+   * the pair, the way the date pair visibly self-corrects; the debounce then
+   * pushes the fixed pair on its own. Deliberately not derived from props —
+   * resyncing local text from server state is what makes the debounce loop.
+   *
+   * Scoped to the pair on purpose: swapping while tabbing from Min to Max would
+   * drop the just-typed value into the field the user is about to type into.
+   */
+  function normalizeBounds(e: React.FocusEvent<HTMLInputElement>) {
+    if (boundsRef.current?.contains(e.relatedTarget as Node | null)) return;
+    const lo = parseAmountMinor(minText);
+    const hi = parseAmountMinor(maxText);
+    if (lo !== null && hi !== null && lo > hi) {
+      setMinText(maxText);
+      setMaxText(minText);
+      announceSwap(`Amount bounds swapped: minimum ${maxText}, maximum ${minText}`);
+    }
+  }
+
+  /**
+   * A live region announces *changes*, so re-setting the same string after an
+   * identical repeat swap would be silent. Alternating a zero-width marker
+   * keeps the spoken text identical while guaranteeing the DOM text differs.
+   */
+  function announceSwap(text: string) {
+    setBoundsNotice((previous) => (previous.endsWith("\u200B") ? text : `${text}\u200B`));
+  }
+
+  /**
+   * A date the server rejects would never move props, so `pending` would never
+   * reconcile and the bad value would stick in the URL. Half-typed years reach
+   * onChange, so only push what the server will accept.
+   */
+  function pushDate(field: "from" | "to", value: string) {
+    if (value === "") update({ [field]: null });
+    else if (parseIsoDate(value)) update({ [field]: value });
+  }
+
+  function toggleType(id: "EXPENSE" | "INCOME" | "TRANSFER") {
+    const base = liveParams();
+    const next = base.type === id ? null : id;
+    const selected = props.categories.find((c) => c.id === base.categoryId);
+    // A category filter never matches transfers, and an expense category never
+    // matches income: either way the chip would vanish from the row below while
+    // still filtering, leaving no way to switch it off.
+    const dropCategory =
+      next === "TRANSFER" ||
+      ((next === "EXPENSE" || next === "INCOME") && selected != null && selected.type !== next);
+    update({ type: next, ...(dropCategory ? { categoryId: null } : {}) });
+  }
+
+  function toggleCategory(id: string) {
+    const base = liveParams();
+    update({
+      categoryId: base.categoryId === id ? null : id,
+      ...(base.type === "TRANSFER" ? { type: null } : {}),
+    });
   }
 
   const activeAccounts = props.accounts.filter((a) => !a.archived);
   const visibleCategories = props.categories.filter(
     (c) =>
-      (!c.archived || c.id === props.categoryId) &&
-      (props.type === "EXPENSE" || props.type === "INCOME" ? c.type === props.type : true),
+      (!c.archived || c.id === live.categoryId) &&
+      (live.type === "EXPENSE" || live.type === "INCOME" ? c.type === live.type : true),
   );
 
   const totalPages = Math.max(1, Math.ceil(result.totalCount / SEARCH_PAGE_SIZE));
-  const page = Math.min(props.page, totalPages);
-  const firstShown = result.entries.length === 0 ? 0 : (page - 1) * SEARCH_PAGE_SIZE + 1;
-  const lastShown = (page - 1) * SEARCH_PAGE_SIZE + result.entries.length;
+  const page = Math.min(live.page, totalPages);
+  // The rows on screen belong to the page the server actually served, so the
+  // "X–Y of Z" line is computed from that — pairing an optimistic page with the
+  // previous page's rows reads as "401–600 of 409" mid-flight.
+  const settledOffset = (result.page - 1) * SEARCH_PAGE_SIZE;
+  const firstShown = result.entries.length === 0 ? 0 : settledOffset + 1;
+  const lastShown = Math.min(result.totalCount, settledOffset + result.entries.length);
 
+  /**
+   * Prev steps from the clamped page so it still moves after the result set
+   * shrank under an out-of-range live page — that clamp is the whole fix for a
+   * dead first Prev tap.
+   *
+   * Next deliberately skips the upper clamp: `totalPages` describes the settled
+   * (possibly narrower) result, so clamping against it could pin a tap made
+   * while a widening filter is still in flight. Defensive only — the
+   * `disabled={page >= totalPages}` guard below blocks the tap in exactly the
+   * cases where the clamp would have bitten, so it is not observable through
+   * the UI (see the note on the pager tests).
+   */
+  function stepPage(delta: number) {
+    const livePage = liveParams().page;
+    const next =
+      delta < 0 ? Math.max(1, Math.min(livePage, totalPages) + delta) : livePage + delta;
+    update({ page: next });
+  }
+
+  // Counted off `live` so the badge reflects a just-tapped filter instead of
+  // lagging a server round-trip behind it.
   const advCount =
-    (props.type !== null ? 1 : 0) +
-    (props.categoryId !== null ? 1 : 0) +
-    (props.accountId !== null ? 1 : 0) +
-    (props.min.trim() !== "" || props.max.trim() !== "" ? 1 : 0);
-  const hasFilter = advCount > 0 || props.range !== "month" || props.q.trim() !== "";
+    (live.type !== null ? 1 : 0) +
+    (live.categoryId !== null ? 1 : 0) +
+    (live.accountId !== null ? 1 : 0) +
+    // Only bounds the server will actually apply — an unparseable one is
+    // dropped there, and a badge for a filter that isn't filtering is a lie.
+    (parseAmountMinor(live.min) !== null || parseAmountMinor(live.max) !== null ? 1 : 0) +
+    (isDefaultSearchBy(live.searchBy) ? 0 : 1);
+  // Raw text, not the parsed bound: a value the server rejects filters nothing
+  // and lights no badge, so "Clear all" is the only way back out of it.
+  const hasFilter =
+    advCount > 0 ||
+    live.range !== "month" ||
+    live.q.trim() !== "" ||
+    live.min.trim() !== "" ||
+    live.max.trim() !== "";
 
   return (
     <div className="mx-auto min-h-dvh max-w-lg pb-12">
@@ -196,7 +406,7 @@ export default function SearchView(
               type="search"
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="Search notes, categories, accounts…"
+              placeholder="Search description or amount…"
               autoFocus
               className="h-11 w-full rounded-lg bg-white px-3 pr-10 text-sm text-gray-800 outline-none placeholder:text-gray-400 [&::-webkit-search-cancel-button]:hidden"
               aria-label="Search records"
@@ -222,28 +432,31 @@ export default function SearchView(
             {SEARCH_RANGES.map((r) => (
               <Chip
                 key={r.id}
-                active={props.range === r.id}
+                active={live.range === r.id}
                 onClick={() => update({ range: r.id, from: null, to: null })}
               >
                 {r.label}
               </Chip>
             ))}
           </div>
-          {props.range === "custom" && (
+          {live.range === "custom" && (
             <div className="mt-2 flex items-center gap-2">
               <input
                 type="date"
-                value={props.from ?? ""}
+                value={live.from ?? ""}
+                min="1900-01-01"
                 max={props.todayIso}
-                onChange={(e) => update({ from: e.target.value || null })}
+                onChange={(e) => pushDate("from", e.target.value)}
                 className="h-10 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 text-sm text-gray-700 outline-none focus:border-brand"
                 aria-label="From date"
               />
               <span className="text-xs text-gray-400">to</span>
               <input
                 type="date"
-                value={props.to ?? ""}
-                onChange={(e) => update({ to: e.target.value || null })}
+                value={live.to ?? ""}
+                min="1900-01-01"
+                max={props.todayIso}
+                onChange={(e) => pushDate("to", e.target.value)}
                 className="h-10 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 text-sm text-gray-700 outline-none focus:border-brand"
                 aria-label="To date"
               />
@@ -283,19 +496,31 @@ export default function SearchView(
 
         {advOpen && (
         <div>
+          <RowLabel>Search by</RowLabel>
+          <div className="scrollbar-none flex gap-1.5 overflow-x-auto">
+            {SEARCH_BY_FIELDS.map((f) => (
+              <Chip
+                key={f.id}
+                active={live.searchBy.includes(f.id)}
+                locked={live.searchBy.length === 1 && live.searchBy[0] === f.id}
+                onClick={() => toggleSearchBy(f.id)}
+              >
+                {f.label}
+              </Chip>
+            ))}
+          </div>
+        </div>
+        )}
+
+        {advOpen && (
+        <div>
           <RowLabel>Type</RowLabel>
           <div className="scrollbar-none flex gap-1.5 overflow-x-auto">
             {TYPES.map((t) => (
               <Chip
                 key={t.id}
-                active={props.type === t.id}
-                onClick={() =>
-                  update({
-                    type: props.type === t.id ? null : t.id,
-                    // a category filter never matches transfers
-                    ...(t.id === "TRANSFER" && props.type !== t.id ? { categoryId: null } : {}),
-                  })
-                }
+                active={live.type === t.id}
+                onClick={() => toggleType(t.id)}
               >
                 {t.label}
               </Chip>
@@ -311,13 +536,8 @@ export default function SearchView(
             {visibleCategories.map((c) => (
               <Chip
                 key={c.id}
-                active={props.categoryId === c.id}
-                onClick={() =>
-                  update({
-                    categoryId: props.categoryId === c.id ? null : c.id,
-                    ...(props.type === "TRANSFER" ? { type: null } : {}),
-                  })
-                }
+                active={live.categoryId === c.id}
+                onClick={() => toggleCategory(c.id)}
               >
                 {c.icon} {c.name}
               </Chip>
@@ -333,8 +553,10 @@ export default function SearchView(
               {activeAccounts.map((a) => (
                 <Chip
                   key={a.id}
-                  active={props.accountId === a.id}
-                  onClick={() => update({ accountId: props.accountId === a.id ? null : a.id })}
+                  active={live.accountId === a.id}
+                  onClick={() =>
+                    update({ accountId: liveParams().accountId === a.id ? null : a.id })
+                  }
                 >
                   {a.icon} {a.name}
                 </Chip>
@@ -346,13 +568,14 @@ export default function SearchView(
         {advOpen && (
         <div>
           <RowLabel>Amount</RowLabel>
-          <div className="flex items-center gap-2">
+          <div ref={boundsRef} className="flex items-center gap-2">
             <input
               type="number"
               inputMode="decimal"
               min="0"
               value={minText}
               onChange={(e) => setMinText(e.target.value)}
+              onBlur={normalizeBounds}
               placeholder="Min"
               className="h-10 w-24 rounded-lg border border-gray-200 bg-white px-2 text-sm text-gray-700 outline-none focus:border-brand"
               aria-label="Minimum amount"
@@ -364,6 +587,7 @@ export default function SearchView(
               min="0"
               value={maxText}
               onChange={(e) => setMaxText(e.target.value)}
+              onBlur={normalizeBounds}
               placeholder="Max"
               className="h-10 w-24 rounded-lg border border-gray-200 bg-white px-2 text-sm text-gray-700 outline-none focus:border-brand"
               aria-label="Maximum amount"
@@ -373,13 +597,21 @@ export default function SearchView(
         )}
       </div>
 
+      {/* Outside the collapsible panel: collapsing it blurs the input, which is
+          itself a swap trigger, and an unmounted live region announces nothing. */}
+      <p role="status" aria-live="polite" className="sr-only">
+        {boundsNotice}
+      </p>
+
       {/* Results */}
       <section className="px-4 pt-4">
         <div className="mb-2 flex items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">
             {totalPages > 1
-              ? `${firstShown}–${lastShown} of ${result.totalCount.toLocaleString(locale)}`
-              : `${result.totalCount} result${result.totalCount === 1 ? "" : "s"}`}
+              ? `${firstShown.toLocaleString(locale)}–${lastShown.toLocaleString(locale)} of ${result.totalCount.toLocaleString(locale)}`
+              : `${result.totalCount.toLocaleString(locale)} result${
+                  result.totalCount === 1 ? "" : "s"
+                }`}
           </h2>
           <span className="flex items-baseline gap-2 text-xs">
             {result.expenseMinor > 0 && (
@@ -389,7 +621,7 @@ export default function SearchView(
               <span className="font-semibold text-income">{fmt(result.incomeMinor, true)}</span>
             )}
             {hasFilter && (
-              <button onClick={clearAll} className="font-medium text-brand-dark underline">
+              <button onClick={reset} className="font-medium text-brand-dark underline">
                 Clear all
               </button>
             )}
@@ -399,6 +631,41 @@ export default function SearchView(
           entries={result.entries}
           currency={currency}
           locale={locale}
+          groupBy="month"
+          defaultExpanded
+          showProgressBar={false}
+          headerAction={({ key, label }) => {
+            // Month key is "YYYY-MM"; the home page takes a relative offset.
+            const [y, m] = key.split("-").map(Number);
+            const [ty, tm] = props.todayIso.split("-").map(Number);
+            // The dashboard clamps the same way; an unclamped offset would
+            // silently land on a different month.
+            const offset = Math.max(
+              -MAX_PERIOD_OFFSET,
+              Math.min(MAX_PERIOD_OFFSET, (y - ty) * 12 + (m - tm)),
+            );
+            return (
+              <Link
+                href={offset === 0 ? "/" : `/?offset=${offset}`}
+                aria-label={`Go to ${label}`}
+                className="mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-400 active:bg-gray-100"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <line x1="4" y1="12" x2="18" y2="12" />
+                  <polyline points="12 6 18 12 12 18" />
+                </svg>
+              </Link>
+            );
+          }}
           emptyText={
             hasFilter
               ? "Nothing matches — try fewer filters or a shorter search term."
@@ -411,17 +678,17 @@ export default function SearchView(
         {totalPages > 1 && (
           <div className="mt-3 flex items-center justify-between">
             <button
-              onClick={() => update({ page: page - 1 })}
+              onClick={() => stepPage(-1)}
               disabled={page <= 1}
               className="flex h-11 items-center rounded-lg border border-gray-200 bg-white px-5 text-sm font-medium text-gray-600 active:bg-gray-100 disabled:opacity-40"
             >
               ‹ Prev
             </button>
             <span className="text-xs font-medium text-gray-500">
-              Page {page} of {totalPages}
+              Page {page.toLocaleString(locale)} of {totalPages.toLocaleString(locale)}
             </span>
             <button
-              onClick={() => update({ page: page + 1 })}
+              onClick={() => stepPage(1)}
               disabled={page >= totalPages}
               className="flex h-11 items-center rounded-lg border border-gray-200 bg-white px-5 text-sm font-medium text-gray-600 active:bg-gray-100 disabled:opacity-40"
             >

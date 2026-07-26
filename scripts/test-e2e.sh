@@ -4,42 +4,24 @@ set -euo pipefail
 run_id="$(date +%s)_$$"
 container="cc-e2e-db-${run_id}"
 database_name="coincache_e2e_${run_id}"
-lock_dir="${TMPDIR:-/tmp}/coincache-e2e.lock"
-lock_acquired=0
+
+# shellcheck source=scripts/e2e-lock.sh
+source "$(dirname "${BASH_SOURCE[0]}")/e2e-lock.sh"
 
 cleanup() {
   docker rm -f "$container" >/dev/null 2>&1 || true
-  if [[ "$lock_acquired" == "1" ]]; then
-    rm -f "$lock_dir/pid"
-    rmdir "$lock_dir" >/dev/null 2>&1 || true
-  fi
+  release_lock
 }
 trap cleanup EXIT INT TERM
 
-acquire_lock() {
-  if mkdir "$lock_dir" 2>/dev/null; then
-    return 0
-  fi
-
-  local owner_pid=""
-  if [[ -r "$lock_dir/pid" ]]; then
-    IFS= read -r owner_pid < "$lock_dir/pid" || true
-  fi
-  if [[ "$owner_pid" =~ ^[0-9]+$ ]] && ! kill -0 "$owner_pid" 2>/dev/null; then
-    rm -f "$lock_dir/pid"
-    rmdir "$lock_dir" >/dev/null 2>&1 || true
-    mkdir "$lock_dir" 2>/dev/null && return 0
-  fi
-
-  return 1
-}
-
 if ! acquire_lock; then
-  echo "Another CoinCache E2E run is already active. Wait for it to finish before retrying." >&2
+  if [[ "${lock_failure_reason:-}" == "unwritable" ]]; then
+    echo "Could not create the E2E lock at ${lock_dir} — check permissions and free space." >&2
+  else
+    echo "Another CoinCache E2E run is already active. Wait for it to finish before retrying." >&2
+  fi
   exit 1
 fi
-lock_acquired=1
-printf '%s\n' "$$" > "$lock_dir/pid"
 
 app_port="$(node scripts/find-free-port.mjs)"
 

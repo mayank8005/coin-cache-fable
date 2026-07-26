@@ -16,10 +16,30 @@ export function formatMoney(
   return minor < 0 ? "−" + s : s;
 }
 
-/** "1234.5" -> 123450 minor units; null when invalid. */
-export function toMinor(input: string | number): number | null {
-  const n = typeof input === "number" ? input : parseFloat(input);
-  if (!Number.isFinite(n)) return null;
-  const minor = Math.round(n * 100);
-  return Number.isSafeInteger(minor) ? minor : null;
+/**
+ * What `<input type="number">` can hand us — "250", ".5", "1e3" — and nothing
+ * else: `Number()` would otherwise also swallow "0x10", "0b11" and "Infinity".
+ */
+const NUMBER_INPUT_VALUE = /^(\d+(\.\d+)?|\.\d+)([eE][+-]?\d+)?$/;
+
+/** The largest storable amount; `amountSchema` in actions.ts caps writes here. */
+export const MAX_AMOUNT_MINOR = 9_000_000_000_000;
+
+/**
+ * Parse a non-negative amount in any form `<input type="number">` produces —
+ * "250", "99.50", ".5", "1e3" — into minor units, else null. Shared by the
+ * search route (min/max params) and `searchEntries` (exact-amount matching) so
+ * both round the same way, and bounded by MAX_AMOUNT_MINOR.
+ *
+ * `amountMinor` is a Prisma BigInt column: handing it a non-integer Float throws
+ * at query time, so anything unrepresentable (or beyond the write-path cap) is
+ * rejected here and the caller simply drops the filter / matches nothing.
+ */
+export function parseAmountMinor(v: unknown): number | null {
+  if (typeof v !== "string") return null;
+  const text = v.trim();
+  if (!NUMBER_INPUT_VALUE.test(text)) return null;
+  const minor = Math.round(Number(text) * 100);
+  if (!Number.isSafeInteger(minor) || minor > MAX_AMOUNT_MINOR) return null;
+  return minor;
 }

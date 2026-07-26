@@ -14,6 +14,8 @@ server.listen({ host: "127.0.0.1", port: 0, exclusive: true }, () => {
     server.close();
     return;
   }
-  console.log(address.port);
+  // Stringify: piped Numbers pick up ANSI color codes when FORCE_COLOR is set,
+  // which breaks the caller's `^\d+$` check.
+  console.log(String(address.port));
   server.close();
 });

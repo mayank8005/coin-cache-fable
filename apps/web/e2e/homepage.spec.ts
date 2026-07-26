@@ -36,7 +36,9 @@ let dates: SeedDates;
 test.beforeEach(async ({ page }) => {
   dates = await seedDashboard();
   await signIn(page);
-  await page.goto("/?period=all");
+  // The dashboard has no all-time tab; these assertions are month-scoped, and
+  // the fixtures keep every seeded date inside the current month.
+  await page.goto("/");
   await expect(page.getByRole("heading", { name: "Records" })).toBeVisible();
 });
 
@@ -61,6 +63,11 @@ test("keeps insights and starts date cards collapsed with accurate spending bars
   const yesterday = group(page, dateLabel(dates.yesterday));
   await expect(yesterday).toContainText("3 records");
   await expect(yesterday.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "50");
+  // A mixed day reports both directions, not just the expenses.
+  await expect(yesterday).toContainText("Spent");
+  await expect(yesterday).toContainText("₹100");
+  await expect(yesterday).toContainText("Income");
+  await expect(yesterday).toContainText("₹500");
 });
 
 test("expands cards independently with keyboard and keeps records editable", async ({ page }) => {
