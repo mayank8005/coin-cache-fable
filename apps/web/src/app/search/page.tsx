@@ -5,7 +5,7 @@ import {
   getSettings,
   searchEntries,
 } from "@/lib/data";
-import { rangeFor, todayInTz, SEARCH_RANGES, type SearchRange } from "@/lib/periods";
+import { rangeFor, lastDaysRange, todayInTz, SEARCH_RANGES, type SearchRange } from "@/lib/periods";
 import SearchView from "@/components/SearchView";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +40,7 @@ export default async function SearchPage({
     : null) as "EXPENSE" | "INCOME" | "TRANSFER" | null;
   const range = (SEARCH_RANGES.some((r) => r.id === sp.range)
     ? sp.range
-    : "month") as SearchRange;
+    : "90d") as SearchRange;
   const categoryId = typeof sp.category === "string" && sp.category !== "" ? sp.category : null;
   const accountId = typeof sp.account === "string" && sp.account !== "" ? sp.account : null;
   let from = typeof sp.from === "string" && ISO_DATE.test(sp.from) ? sp.from : null;
@@ -57,13 +57,8 @@ export default async function SearchPage({
 
   let start: string | null = null;
   let end: string | null = null;
-  if (range === "month") {
-    ({ start, end } = rangeFor("month", 0, today));
-  } else if (range === "lastmonth") {
-    ({ start, end } = rangeFor("month", -1, today));
-  } else if (range === "3m") {
-    start = rangeFor("month", -2, today).start;
-    end = rangeFor("month", 0, today).end;
+  if (range === "90d") {
+    ({ start, end } = lastDaysRange(90, today));
   } else if (range === "year") {
     ({ start, end } = rangeFor("year", 0, today));
   } else if (range === "custom") {

@@ -11,12 +11,10 @@ export const PERIODS: { id: Period; label: string }[] = [
 
 export const SEARCH_PAGE_SIZE = 200;
 
-export type SearchRange = "month" | "lastmonth" | "3m" | "year" | "all" | "custom";
+export type SearchRange = "90d" | "year" | "all" | "custom";
 
 export const SEARCH_RANGES: { id: SearchRange; label: string }[] = [
-  { id: "month", label: "This month" },
-  { id: "lastmonth", label: "Last month" },
-  { id: "3m", label: "Last 3 months" },
+  { id: "90d", label: "Last 90 days" },
   { id: "year", label: "This year" },
   { id: "all", label: "All time" },
   { id: "custom", label: "Custom…" },
@@ -44,6 +42,12 @@ function addDays(date: Date, n: number): Date {
   const c = new Date(date);
   c.setUTCDate(c.getUTCDate() + n);
   return c;
+}
+
+/** Rolling window of the last `days` days ending today (inclusive); `end` is exclusive. */
+export function lastDaysRange(days: number, todayIso: string): { start: string; end: string } {
+  const today = d(todayIso);
+  return { start: iso(addDays(today, -days)), end: iso(addDays(today, 1)) };
 }
 
 const MONTH_FMT = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" });
