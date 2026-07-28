@@ -11,6 +11,9 @@ export const PERIODS: { id: Period; label: string }[] = [
 
 export const SEARCH_PAGE_SIZE = 200;
 
+/** How far the dashboard will step from the current period, in either direction. */
+export const MAX_PERIOD_OFFSET = 1200;
+
 export type SearchRange = "90d" | "year" | "all" | "custom";
 
 export const SEARCH_RANGES: { id: SearchRange; label: string }[] = [
@@ -21,6 +24,24 @@ export const SEARCH_RANGES: { id: SearchRange; label: string }[] = [
 ];
 
 export const DEFAULT_SEARCH_RANGE: SearchRange = "90d";
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * A real calendar date, not just the right shape: "2026-13-45" and "2026-02-30"
+ * both pass the regex but blow up (or silently roll over) once they reach
+ * `new Date()` or Prisma. The year bound keeps date arithmetic inside the range
+ * `toISOString()` can render without an expanded-year prefix ("+010000-…").
+ */
+export function parseIsoDate(v: unknown): string | null {
+  if (typeof v !== "string" || !ISO_DATE.test(v)) return null;
+  const [y, m, d] = v.split("-").map(Number);
+  if (y < 1900 || y > 9998) return null;
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const roundTrips =
+    date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+  return roundTrips ? v : null;
+}
 
 /** Today's calendar date (YYYY-MM-DD) in the given IANA timezone. */
 export function todayInTz(tz: string): string {
@@ -57,7 +78,8 @@ export function lastDaysRange(days: number, todayIso: string): { start: string; 
   return { start: iso(addDays(today, -(days - 1))), end: nextDay(todayIso) };
 }
 
-const MONTH_FMT = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" });
+/** "March 2025" — also used for month-grouped entry cards. */
+export const MONTH_FMT = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" });
 const DAY_FMT = new Intl.DateTimeFormat("en", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 const SHORT_FMT = new Intl.DateTimeFormat("en", { day: "numeric", month: "short", timeZone: "UTC" });
 

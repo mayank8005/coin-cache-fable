@@ -6,6 +6,7 @@ import {
   searchEntries,
 } from "@/lib/data";
 import {
+  parseIsoDate,
   rangeFor,
   lastDaysRange,
   nextDay,
@@ -14,19 +15,11 @@ import {
   DEFAULT_SEARCH_RANGE,
   type SearchRange,
 } from "@/lib/periods";
+import { parseAmountMinor } from "@/lib/money";
+import { parseSearchBy } from "@/lib/search";
 import SearchView from "@/components/SearchView";
 
 export const dynamic = "force-dynamic";
-
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-/** Parse a positive money amount ("250" or "99.50") into minor units, else null. */
-function parseAmount(v: unknown): number | null {
-  if (typeof v !== "string" || v.trim() === "") return null;
-  const n = Number(v);
-  if (!Number.isFinite(n) || n < 0) return null;
-  return Math.round(n * 100);
-}
 
 export default async function SearchPage({
   searchParams,
@@ -45,11 +38,12 @@ export default async function SearchPage({
     : DEFAULT_SEARCH_RANGE) as SearchRange;
   const categoryId = typeof sp.category === "string" && sp.category !== "" ? sp.category : null;
   const accountId = typeof sp.account === "string" && sp.account !== "" ? sp.account : null;
-  let from = typeof sp.from === "string" && ISO_DATE.test(sp.from) ? sp.from : null;
-  let to = typeof sp.to === "string" && ISO_DATE.test(sp.to) ? sp.to : null;
+  let from = parseIsoDate(sp.from);
+  let to = parseIsoDate(sp.to);
   if (from && to && from > to) [from, to] = [to, from];
-  let minMinor = parseAmount(sp.min);
-  let maxMinor = parseAmount(sp.max);
+  const searchBy = parseSearchBy(sp.by);
+  let minMinor = parseAmountMinor(sp.min);
+  let maxMinor = parseAmountMinor(sp.max);
   if (minMinor !== null && maxMinor !== null && minMinor > maxMinor)
     [minMinor, maxMinor] = [maxMinor, minMinor];
   const page = Math.max(1, Math.min(1000, parseInt(String(sp.page ?? "1"), 10) || 1));
@@ -69,7 +63,11 @@ export default async function SearchPage({
   }
 
   const [result, accounts, categories] = await Promise.all([
-    searchEntries(user.id, { q, type, categoryId, accountId, start, end, minMinor, maxMinor }, page),
+    searchEntries(
+      user.id,
+      { q, type, categoryId, accountId, start, end, minMinor, maxMinor, searchBy },
+      page,
+    ),
     getAccountsWithBalances(user.id),
     getCategories(user.id),
   ]);
@@ -85,6 +83,7 @@ export default async function SearchPage({
       max={typeof sp.max === "string" ? sp.max : ""}
       categoryId={categoryId}
       accountId={accountId}
+      searchBy={searchBy}
       page={page}
       result={result}
       accounts={accounts}
