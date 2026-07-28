@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "node --experimental-strip-types --experimental-default-type=module --test src/lib/*.unit.test.ts",
     "test:db": "node --experimental-strip-types --experimental-default-type=module --test src/lib/description-suggestions.integration.test.ts",
     "prisma:generate": "prisma generate"
   },
