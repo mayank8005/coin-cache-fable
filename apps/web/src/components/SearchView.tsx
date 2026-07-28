@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Entry, PlainAccount, PlainCategory, SearchResult } from "@/lib/data";
 import {
+  DEFAULT_SEARCH_RANGE,
   MAX_PERIOD_OFFSET,
   parseIsoDate,
   SEARCH_PAGE_SIZE,
@@ -72,7 +73,7 @@ function buildQuery(p: Params): string {
   const s = new URLSearchParams();
   if (p.q.trim()) s.set("q", p.q.trim());
   if (p.type) s.set("type", p.type);
-  if (p.range !== "month") s.set("range", p.range);
+  if (p.range !== DEFAULT_SEARCH_RANGE) s.set("range", p.range);
   if (p.range === "custom") {
     if (p.from) s.set("from", p.from);
     if (p.to) s.set("to", p.to);
@@ -234,7 +235,7 @@ export default function SearchView(
     return {
       q: "",
       type: null,
-      range: "month",
+      range: DEFAULT_SEARCH_RANGE,
       from: null,
       to: null,
       min: "",
@@ -385,7 +386,7 @@ export default function SearchView(
   // and lights no badge, so "Clear all" is the only way back out of it.
   const hasFilter =
     advCount > 0 ||
-    live.range !== "month" ||
+    live.range !== DEFAULT_SEARCH_RANGE ||
     live.q.trim() !== "" ||
     live.min.trim() !== "" ||
     live.max.trim() !== "";

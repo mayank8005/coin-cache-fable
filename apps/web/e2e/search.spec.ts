@@ -55,7 +55,7 @@ async function signIn(page: Page) {
   await expect(page).toHaveURL(/\/$/);
 }
 
-/** Search opens with "This month"; most tests here need the older fixtures too. */
+/** Search opens with "Last 90 days"; most tests here need the older fixtures too. */
 async function allTime(page: Page) {
   await page.getByRole("button", { name: "All time" }).click();
   await expect(page).toHaveURL(/range=all/);
@@ -420,10 +420,10 @@ test("keeps filters cleared when a chip is tapped right after Clear all", async 
 
   await delayNavigations(page, 900);
   await page.getByRole("button", { name: "Clear all" }).click();
-  await page.getByRole("button", { name: "Last month" }).click();
+  await page.getByRole("button", { name: "This year" }).click();
 
   // The tap composes on the cleared state, so nothing else comes back with it.
-  await expect(page).toHaveURL(/\/search\?range=lastmonth$/);
+  await expect(page).toHaveURL(/\/search\?range=year$/);
 });
 
 test("renders rather than crashing on invalid date params", async ({ page }) => {
@@ -498,7 +498,7 @@ test("clamps a page past the end to the last real page", async ({ page }) => {
 });
 
 test("offers Clear all for an amount bound the server rejects", async ({ page }) => {
-  // Default month range and no query, so the raw min text is the only thing
+  // Default 90-day range and no query, so the raw min text is the only thing
   // that can make the filter set look non-empty.
   await openAdvanced(page);
   await page.getByLabel("Minimum amount").fill("-5");

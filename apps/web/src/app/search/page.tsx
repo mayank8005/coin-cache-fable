@@ -8,8 +8,11 @@ import {
 import {
   parseIsoDate,
   rangeFor,
+  lastDaysRange,
+  nextDay,
   todayInTz,
   SEARCH_RANGES,
+  DEFAULT_SEARCH_RANGE,
   type SearchRange,
 } from "@/lib/periods";
 import { parseAmountMinor } from "@/lib/money";
@@ -17,12 +20,6 @@ import { parseSearchBy } from "@/lib/search";
 import SearchView from "@/components/SearchView";
 
 export const dynamic = "force-dynamic";
-
-function nextDay(iso: string): string {
-  const d = new Date(iso + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() + 1);
-  return d.toISOString().slice(0, 10);
-}
 
 export default async function SearchPage({
   searchParams,
@@ -38,7 +35,7 @@ export default async function SearchPage({
     : null) as "EXPENSE" | "INCOME" | "TRANSFER" | null;
   const range = (SEARCH_RANGES.some((r) => r.id === sp.range)
     ? sp.range
-    : "month") as SearchRange;
+    : DEFAULT_SEARCH_RANGE) as SearchRange;
   const categoryId = typeof sp.category === "string" && sp.category !== "" ? sp.category : null;
   const accountId = typeof sp.account === "string" && sp.account !== "" ? sp.account : null;
   let from = parseIsoDate(sp.from);
@@ -56,13 +53,8 @@ export default async function SearchPage({
 
   let start: string | null = null;
   let end: string | null = null;
-  if (range === "month") {
-    ({ start, end } = rangeFor("month", 0, today));
-  } else if (range === "lastmonth") {
-    ({ start, end } = rangeFor("month", -1, today));
-  } else if (range === "3m") {
-    start = rangeFor("month", -2, today).start;
-    end = rangeFor("month", 0, today).end;
+  if (range === "90d") {
+    ({ start, end } = lastDaysRange(90, today));
   } else if (range === "year") {
     ({ start, end } = rangeFor("year", 0, today));
   } else if (range === "custom") {

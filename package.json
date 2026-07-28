@@ -10,7 +10,7 @@
     "dev": "npm run dev -w apps/web",
     "build": "npm run build -w apps/web",
     "start": "npm run start -w apps/web",
-    "test": "npm test -w packages/shared",
+    "test": "npm test --workspaces --if-present",
     "test:db": "npm run test:db -w apps/web",
     "test:e2e": "bash scripts/test-e2e.sh"
   },
