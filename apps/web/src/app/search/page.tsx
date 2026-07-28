@@ -5,18 +5,20 @@ import {
   getSettings,
   searchEntries,
 } from "@/lib/data";
-import { rangeFor, lastDaysRange, todayInTz, SEARCH_RANGES, type SearchRange } from "@/lib/periods";
+import {
+  rangeFor,
+  lastDaysRange,
+  nextDay,
+  todayInTz,
+  SEARCH_RANGES,
+  DEFAULT_SEARCH_RANGE,
+  type SearchRange,
+} from "@/lib/periods";
 import SearchView from "@/components/SearchView";
 
 export const dynamic = "force-dynamic";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-function nextDay(iso: string): string {
-  const d = new Date(iso + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() + 1);
-  return d.toISOString().slice(0, 10);
-}
 
 /** Parse a positive money amount ("250" or "99.50") into minor units, else null. */
 function parseAmount(v: unknown): number | null {
@@ -40,7 +42,7 @@ export default async function SearchPage({
     : null) as "EXPENSE" | "INCOME" | "TRANSFER" | null;
   const range = (SEARCH_RANGES.some((r) => r.id === sp.range)
     ? sp.range
-    : "90d") as SearchRange;
+    : DEFAULT_SEARCH_RANGE) as SearchRange;
   const categoryId = typeof sp.category === "string" && sp.category !== "" ? sp.category : null;
   const accountId = typeof sp.account === "string" && sp.account !== "" ? sp.account : null;
   let from = typeof sp.from === "string" && ISO_DATE.test(sp.from) ? sp.from : null;

@@ -20,6 +20,8 @@ export const SEARCH_RANGES: { id: SearchRange; label: string }[] = [
   { id: "custom", label: "Custom…" },
 ];
 
+export const DEFAULT_SEARCH_RANGE: SearchRange = "90d";
+
 /** Today's calendar date (YYYY-MM-DD) in the given IANA timezone. */
 export function todayInTz(tz: string): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -44,10 +46,15 @@ function addDays(date: Date, n: number): Date {
   return c;
 }
 
+/** The calendar day after `dateIso` (YYYY-MM-DD); useful as an exclusive end bound. */
+export function nextDay(dateIso: string): string {
+  return iso(addDays(d(dateIso), 1));
+}
+
 /** Rolling window of the last `days` days ending today (inclusive); `end` is exclusive. */
 export function lastDaysRange(days: number, todayIso: string): { start: string; end: string } {
   const today = d(todayIso);
-  return { start: iso(addDays(today, -days)), end: iso(addDays(today, 1)) };
+  return { start: iso(addDays(today, -(days - 1))), end: nextDay(todayIso) };
 }
 
 const MONTH_FMT = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" });

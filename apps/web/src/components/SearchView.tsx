@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Entry, PlainAccount, PlainCategory, SearchResult } from "@/lib/data";
-import { SEARCH_PAGE_SIZE, SEARCH_RANGES, type SearchRange } from "@/lib/periods";
+import { SEARCH_PAGE_SIZE, SEARCH_RANGES, DEFAULT_SEARCH_RANGE, type SearchRange } from "@/lib/periods";
 import { formatMoney } from "@/lib/money";
 import EntryList from "./EntryList";
 import RecordDialog from "./RecordDialog";
@@ -94,7 +94,7 @@ export default function SearchView(
     const s = new URLSearchParams();
     if (next.q.trim()) s.set("q", next.q.trim());
     if (next.type) s.set("type", next.type);
-    if (next.range !== "90d") s.set("range", next.range);
+    if (next.range !== DEFAULT_SEARCH_RANGE) s.set("range", next.range);
     if (next.range === "custom") {
       if (next.from) s.set("from", next.from);
       if (next.to) s.set("to", next.to);
@@ -143,7 +143,7 @@ export default function SearchView(
       resetting.current &&
       props.q === "" &&
       props.type === null &&
-      props.range === "90d" &&
+      props.range === DEFAULT_SEARCH_RANGE &&
       props.categoryId === null &&
       props.accountId === null &&
       props.min === "" &&
@@ -178,7 +178,7 @@ export default function SearchView(
     (props.categoryId !== null ? 1 : 0) +
     (props.accountId !== null ? 1 : 0) +
     (props.min.trim() !== "" || props.max.trim() !== "" ? 1 : 0);
-  const hasFilter = advCount > 0 || props.range !== "90d" || props.q.trim() !== "";
+  const hasFilter = advCount > 0 || props.range !== DEFAULT_SEARCH_RANGE || props.q.trim() !== "";
 
   return (
     <div className="mx-auto min-h-dvh max-w-lg pb-12">

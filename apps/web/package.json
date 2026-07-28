@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "prisma:generate": "prisma generate",
-    "test": "node --experimental-strip-types --test src/lib/periods.test.ts"
+    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@coincache/shared": "*",
